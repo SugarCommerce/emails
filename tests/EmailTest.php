@@ -1,0 +1,1099 @@
+<?php
+/**
+ * Tag, component and sending tests.
+ *
+ * @package SugarCommerce\Emails
+ */
+
+declare( strict_types=1 );
+
+namespace SugarCommerce\Emails\Tests;
+
+use SugarCommerce\Emails\Email;
+use SugarCommerce\Emails\Emails;
+use SugarCommerce\Emails\Render\Components;
+use SugarCommerce\Emails\Render\Processor;
+use SugarCommerce\Emails\Tags;
+use SugarCommerce\Emails\Templates;
+use SugarCommerce\Emails\Utils\Runtime;
+use PHPUnit\Framework\TestCase;
+use RuntimeException;
+use WP_Error;
+
+/**
+ * What goes out, and what does not.
+ *
+ * Most of these are about the second. A transactional email is the one piece
+ * of a plugin that reaches a customer, cannot be taken back, and is read
+ * carefully — so a gap in a sentence where the order total should be is worse
+ * than an email that never arrives, and both are worse than an error somebody
+ * can see.
+ */
+final class EmailTest extends TestCase {
+
+	/**
+	 * Reset the stubbed globals and the registries.
+	 */
+	/**
+	 * A directory of templates a test wrote, if it wrote one.
+	 *
+	 * @var string
+	 */
+	private string $templates_dir = '';
+
+	/**
+	 * Reset the stubbed globals and the registries.
+	 */
+	protected function setUp(): void {
+		re_reset_globals();
+	}
+
+	/**
+	 * Put the shipped templates back.
+	 */
+	protected function tearDown(): void {
+		if ( '' === $this->templates_dir ) {
+			return;
+		}
+
+		Templates::set_templates_dir( dirname( __DIR__ ) . '/templates/' );
+
+		foreach ( (array) glob( $this->templates_dir . '*.html' ) as $file ) {
+			unlink( (string) $file );
+		}
+
+		$this->templates_dir = '';
+	}
+
+	/**
+	 * Register the usual tags.
+	 *
+	 * @return void
+	 */
+	private function tags(): void {
+		Tags::add( 'shop', 'customer_name', [
+			'label'    => 'Customer name',
+			'callback' => static fn( $order ): string => (string) ( $order->name ?? '' ),
+			'preview'  => 'Jane Doe',
+		] );
+
+		Tags::add( 'shop', 'order_total', [
+			'label'    => 'Order total',
+			'callback' => static fn( $order ): string => '£' . number_format( (float) ( $order->total ?? 0 ), 2 ),
+		] );
+	}
+
+	/**
+	 * An order to send about.
+	 *
+	 * @return object
+	 */
+	private function order(): object {
+		return (object) [ 'name' => 'Jane Doe', 'total' => 99.5 ];
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Tags
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * A tag is filled in with what its callback returns.
+	 */
+	public function test_a_tag_is_filled_in(): void {
+		$this->tags();
+
+		$html = Email::make()
+			->content( 'Hello {customer_name}, that comes to {order_total}.' )
+			->tags( 'shop' )
+			->about( $this->order() )
+			->html();
+
+		$this->assertStringContainsString( 'Hello Jane Doe, that comes to £99.50.', $html );
+	}
+
+	/**
+	 * A tag, an email or a design given no label is called by its key, made
+	 * readable: one space between words however they were joined, and the
+	 * first word capitalised.
+	 */
+	public function test_a_key_without_a_label_is_made_readable(): void {
+		$tag = Tags::add( 'shop', 'order__total', [ 'callback' => static fn(): string => '' ] );
+
+		$this->assertSame( 'Order total', $tag->get( 'label' ) );
+
+		Emails::add( 'shop', '_gift_card', [ 'subject' => 'S', 'content' => 'B' ] );
+
+		$this->assertSame( 'Gift card', Emails::get( 'shop', '_gift_card' )['label'] );
+		$this->assertSame( 'My letterhead', Templates::get_template_meta( 'my-_letterhead' )['name'] );
+	}
+
+	/**
+	 * A tag nobody registered does not go out looking like a tag.
+	 *
+	 * `Hi {customer_name}` reaching a customer exactly like that is the most
+	 * recognisable email bug there is, and it used to be the behaviour: the
+	 * processor looked for tags it knew and left everything else alone.
+	 */
+	public function test_an_unknown_tag_is_removed_rather_than_sent(): void {
+		$this->tags();
+
+		$processor = new Processor( [ 'shop' ] );
+
+		$html = $processor->process( 'Hello {customer_naem}, welcome.', $this->order() );
+
+		$this->assertStringNotContainsString( '{customer_naem}', $html );
+		$this->assertSame( [ 'customer_naem' ], $processor->unknown() );
+	}
+
+	/**
+	 * A tag whose callback throws is reported, not swallowed.
+	 *
+	 * It used to be caught, written to the error log and replaced with an
+	 * empty string — twice, in two places — so the email went out with a gap
+	 * in it and the only record was a line in a file nobody reads.
+	 */
+	public function test_a_tag_that_throws_is_reported(): void {
+		Tags::add( 'shop', 'order_total', [
+			'callback' => static function (): string {
+				throw new RuntimeException( 'the order has no currency' );
+			},
+		] );
+
+		$processor = new Processor( [ 'shop' ] );
+
+		$processor->process( 'That comes to {order_total}.', null );
+
+		$this->assertFalse( $processor->is_complete() );
+		$this->assertStringContainsString( 'the order has no currency', $processor->problems()['order_total'] );
+	}
+
+	/**
+	 * And the email is not sent.
+	 *
+	 * Sending nothing is recoverable. Sending an order confirmation with a
+	 * blank where the total should be is not.
+	 */
+	public function test_an_email_with_a_failed_tag_does_not_send(): void {
+		Tags::add( 'shop', 'order_total', [
+			'callback' => static function (): string {
+				throw new RuntimeException( 'no currency' );
+			},
+		] );
+
+		$sent = Email::make()
+			->to( 'customer@example.test' )
+			->subject( 'Your order' )
+			->content( 'That comes to {order_total}.' )
+			->tags( 'shop' )
+			->send();
+
+		$this->assertInstanceOf( WP_Error::class, $sent );
+		$this->assertSame( [], $GLOBALS['re_mail'], 'It sent anyway.' );
+	}
+
+	/**
+	 * A tag with nothing to show renders as nothing, which is not a failure.
+	 *
+	 * A basket with no items is not an error, and an empty table is worse
+	 * than no table.
+	 */
+	public function test_a_tag_with_nothing_to_show_is_not_a_failure(): void {
+		Tags::add( 'shop', 'items', [
+			'type'     => 'order_items',
+			'callback' => static fn(): bool => false,
+		] );
+
+		$processor = new Processor( [ 'shop' ] );
+
+		$this->assertSame( 'Your items: ', $processor->process( 'Your items: {items}', null ) );
+		$this->assertTrue( $processor->is_complete() );
+	}
+
+	/**
+	 * A tag is only asked for if the content uses it.
+	 *
+	 * A site with four hundred registered tags used to run four hundred
+	 * str_contains() over every email.
+	 */
+	public function test_only_the_tags_the_content_uses_are_asked_for(): void {
+		$asked = [];
+
+		foreach ( [ 'a', 'b', 'c' ] as $name ) {
+			Tags::add( 'shop', $name, [
+				'callback' => static function () use ( $name, &$asked ): string {
+					$asked[] = $name;
+
+					return $name;
+				},
+			] );
+		}
+
+		( new Processor( [ 'shop' ] ) )->process( 'Only {b} here.', null );
+
+		$this->assertSame( [ 'b' ], $asked );
+	}
+
+	/**
+	 * A later group's tag wins a name an earlier one used.
+	 *
+	 * The useful way round: a plugin's own {site_name} overrides the general
+	 * one rather than being shadowed by it.
+	 */
+	public function test_a_later_group_wins_a_shared_name(): void {
+		Tags::add( 'general', 'site_name', [ 'callback' => static fn(): string => 'The site' ] );
+		Tags::add( 'shop', 'site_name', [ 'callback' => static fn(): string => 'The shop' ] );
+
+		$this->assertSame( 'The shop', ( new Processor( [ 'general', 'shop' ] ) )->process( '{site_name}', null ) );
+	}
+
+	/**
+	 * The subject is filled in too, as one line of text.
+	 *
+	 * `Your order from {site_name}` is the first example in the README and
+	 * it used to reach the customer exactly like that: only the body went
+	 * through the processor. A subject is a header, so what the tag returns
+	 * goes in as words — no entity for the ampersand, no line break — while
+	 * the same tag in the body is escaped for markup.
+	 */
+	public function test_the_subject_is_filled_in_as_one_line_of_text(): void {
+		$this->tags();
+
+		Email::make()
+			->to( 'customer@example.test' )
+			->subject( 'Your order, {customer_name}' )
+			->content( 'Thanks {customer_name}.' )
+			->tags( 'shop' )
+			->about( (object) [ 'name' => "Smith & Sons\r\nLtd", 'total' => 1 ] )
+			->send();
+
+		$mail = $GLOBALS['re_mail'][0];
+
+		$this->assertSame( 'Your order, Smith & Sons Ltd', $mail['subject'] );
+		$this->assertStringContainsString( 'Thanks Smith &amp; Sons', $mail['message'] );
+
+		// And the title the template shows is the subject, escaped for the
+		// <h1> it sits in.
+		$this->assertStringContainsString( 'Your order, Smith &amp; Sons Ltd', $mail['message'] );
+	}
+
+	/**
+	 * A tag that fails in the subject stops the email as surely as one in
+	 * the body.
+	 */
+	public function test_a_failed_tag_in_the_subject_stops_the_email(): void {
+		Tags::add( 'shop', 'order_id', [
+			'callback' => static function (): string {
+				throw new RuntimeException( 'no order' );
+			},
+		] );
+
+		$sent = Email::make()
+			->to( 'customer@example.test' )
+			->subject( 'Order {order_id}' )
+			->content( 'Thanks.' )
+			->tags( 'shop' )
+			->send();
+
+		$this->assertInstanceOf( WP_Error::class, $sent );
+		$this->assertSame( [], $GLOBALS['re_mail'], 'It sent anyway.' );
+	}
+
+	/**
+	 * A text tag goes in as text.
+	 *
+	 * What a text tag's callback returns is very often what a customer
+	 * typed — the billing name, the note on the order — and it went straight
+	 * into the markup. A customer who put a tag in their name put a tag in
+	 * the shop's email.
+	 */
+	public function test_a_text_tag_goes_in_as_text(): void {
+		Tags::add( 'shop', 'customer_name', [
+			'callback' => static fn(): string => '<b>x</b>',
+		] );
+
+		$html = ( new Processor( [ 'shop' ] ) )->process( 'Hello {customer_name}.', null );
+
+		$this->assertStringContainsString( 'Hello &lt;b&gt;x&lt;/b&gt;.', $html );
+		$this->assertStringNotContainsString( '<b>x</b>', $html );
+	}
+
+	/**
+	 * A tag that says it returns markup is trusted to.
+	 */
+	public function test_an_html_tag_goes_in_as_it_is(): void {
+		Tags::add( 'shop', 'signature', [
+			'type'     => 'html',
+			'callback' => static fn(): string => '<b>x</b>',
+		] );
+
+		$this->assertStringContainsString(
+			'<b>x</b>',
+			( new Processor( [ 'shop' ] ) )->process( 'Regards, {signature}', null )
+		);
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Components
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * A tag whose type is a component draws the component.
+	 */
+	public function test_a_component_tag_draws_the_component(): void {
+		Tags::add( 'shop', 'view_order', [
+			'type'     => 'button',
+			'callback' => static fn(): array => [ 'text' => 'View your order', 'url' => 'https://example.test/o/1' ],
+		] );
+
+		$html = ( new Processor( [ 'shop' ] ) )->process( '{view_order}', null );
+
+		$this->assertStringContainsString( 'View your order', $html );
+		$this->assertStringContainsString( 'https://example.test/o/1', $html );
+	}
+
+	/**
+	 * A callback returning a string fills the component's main argument.
+	 *
+	 * Which argument that is used to live in a table of twenty-one entries,
+	 * kept by hand, in a different file from the components. Each component
+	 * says for itself now.
+	 */
+	public function test_a_string_fills_the_components_main_argument(): void {
+		Tags::add( 'shop', 'warning', [
+			'type'     => 'alert',
+			'callback' => static fn(): string => 'Your card is about to expire.',
+		] );
+
+		$this->assertStringContainsString(
+			'Your card is about to expire.',
+			( new Processor( [ 'shop' ] ) )->process( '{warning}', null )
+		);
+	}
+
+	/**
+	 * Every component says what its main argument is, and means it.
+	 *
+	 * The three lists that had to agree are one list now, and this is what
+	 * stops it drifting back: a component added without a primary key, or
+	 * with one that is not an argument it reads, fails here.
+	 */
+	public function test_every_component_takes_a_string_or_refuses_one(): void {
+		$types = Components::types();
+
+		// The set the README documents. A component taken away or added
+		// without the README saying so fails here.
+		$this->assertSame(
+			[ 'alert', 'button', 'code_block', 'coupon', 'divider', 'downloads_list', 'key_value_list', 'order_items', 'spacer', 'table' ],
+			$types
+		);
+
+		$scalar = 0;
+		$lists  = 0;
+
+		foreach ( $types as $type ) {
+			$key = Components::primary_key( $type );
+
+			if ( '' === $key ) {
+				++$lists;
+
+				continue;
+			}
+
+			++$scalar;
+
+			// The component reads the argument it named, without complaining
+			// about its type — which is what "primary key" has to mean for
+			// the string a callback returns to be usable.
+			$rendered = Components::render( $type, [ $key => 'Something identifiable' ] );
+
+			$this->assertIsString( $rendered, sprintf( '%s did not render.', $type ) );
+		}
+
+		$this->assertGreaterThan( 4, $scalar, 'Nothing takes a bare string any more.' );
+		$this->assertGreaterThan( 2, $lists, 'Nothing is declared as taking a list.' );
+	}
+
+	/**
+	 * A component whose argument is a list refuses a bare string.
+	 *
+	 * It used to be given one anyway — there was a table saying order_items'
+	 * main argument was `items`, so a callback returning a string put a word
+	 * where a list of order lines belonged, and the component iterated over
+	 * it. Half a table, a PHP warning in the middle of the email, and the
+	 * email still sent.
+	 */
+	public function test_a_list_component_refuses_a_bare_string(): void {
+		Tags::add( 'shop', 'items', [
+			'type'     => 'order_items',
+			'callback' => static fn(): string => 'A widget, a gadget',
+		] );
+
+		$processor = new Processor( [ 'shop' ] );
+
+		$html = $processor->process( '{items}', null );
+
+		$this->assertFalse( $processor->is_complete() );
+		$this->assertStringContainsString( 'needs an array of values', $processor->problems()['items'] );
+		$this->assertSame( '', $html );
+	}
+
+	/**
+	 * A component's type is derived from its class name.
+	 */
+	public function test_a_components_type_comes_from_its_class(): void {
+		$this->assertTrue( Components::has( 'code_block' ) );
+		$this->assertTrue( Components::has( 'order_items' ) );
+		$this->assertTrue( Components::has( 'alert' ) );
+		$this->assertFalse( Components::has( 'CodeBlock' ) );
+	}
+
+	/**
+	 * A plugin can add one of its own.
+	 */
+	public function test_a_plugin_can_add_a_component(): void {
+		add_filter(
+			Runtime::hook( 'components' ),
+			static function ( array $map ): array {
+				$map['gift_note'] = GiftNote::class;
+
+				return $map;
+			}
+		);
+
+		Components::flush();
+
+		$this->assertTrue( Components::has( 'gift_note' ) );
+		$this->assertSame( 'note', Components::primary_key( 'gift_note' ) );
+		$this->assertSame( '<p>Happy birthday</p>', Components::render( 'gift_note', [ 'note' => 'Happy birthday' ] ) );
+	}
+
+	/**
+	 * And a class that is not a component is refused rather than fataling.
+	 */
+	public function test_something_that_is_not_a_component_is_refused(): void {
+		add_filter(
+			Runtime::hook( 'components' ),
+			static function ( array $map ): array {
+				$map['nonsense'] = 'DateTimeImmutable';
+
+				return $map;
+			}
+		);
+
+		Components::flush();
+
+		$this->assertFalse( Components::has( 'nonsense' ) );
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Headers
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * A header value never carries a line break.
+	 *
+	 * Not because it would inject one — PHPMailer refuses a custom header
+	 * containing CR or LF and strips them out of names and subjects, so an
+	 * injection does not land. It refuses by throwing, which wp_mail()
+	 * swallows and reports as a plain false: the email silently does not go.
+	 *
+	 * Cleaning the value means it sends, with a name that has had a stray
+	 * newline turned into a space.
+	 */
+	public function test_a_header_value_never_carries_a_line_break(): void {
+		Email::make()
+			->to( 'customer@example.test' )
+			->subject( "Your order\r\nBcc: attacker@evil.test" )
+			->reply_to( 'jane@example.test', "Jane Doe\r\nBcc: attacker@evil.test" )
+			->header( 'X-Order-Ref', "123\r\nBcc: attacker@evil.test" )
+			->content( 'Thanks.' )
+			->send();
+
+		$mail = $GLOBALS['re_mail'][0];
+
+		foreach ( array_merge( [ $mail['subject'] ], $mail['headers'] ) as $line ) {
+			$this->assertDoesNotMatchRegularExpression(
+				'/[\r\n]/',
+				(string) $line,
+				sprintf( 'A line break survived into %s.', $line )
+			);
+		}
+
+		$this->assertStringContainsString( 'Reply-To: Jane Doe Bcc: attacker@evil.test <jane@example.test>', implode( "\x00", $mail['headers'] ) );
+	}
+
+	/**
+	 * An address that is not one is left out rather than mangled in.
+	 */
+	public function test_an_address_that_is_not_one_is_left_out(): void {
+		Email::make()
+			->to( 'customer@example.test' )
+			->cc( 'not an address' )
+			->content( 'Thanks.' )
+			->send();
+
+		$this->assertSame(
+			[ 'Content-Type: text/html; charset=UTF-8' ],
+			$GLOBALS['re_mail'][0]['headers']
+		);
+	}
+
+	/**
+	 * An email with nobody to go to is refused.
+	 */
+	public function test_an_email_with_no_recipient_is_refused(): void {
+		$this->assertInstanceOf( WP_Error::class, Email::make()->content( 'Hello' )->send() );
+	}
+
+	/* ---------------------------------------------------------------------
+	 * Templates and registration
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * The body goes inside the visual template.
+	 */
+	public function test_the_body_goes_inside_the_template(): void {
+		$html = Email::make()->subject( 'Your order' )->content( '<p>Thanks.</p>' )->html();
+
+		$this->assertStringContainsString( '<p>Thanks.</p>', $html );
+		$this->assertStringContainsString( '<html', strtolower( $html ) );
+	}
+
+	/**
+	 * A template placeholder nobody filled in does not reach the reader.
+	 *
+	 * `{color_primary}` in the middle of an email is the sort of thing that
+	 * gets screenshotted. The shipped templates use only placeholders this
+	 * library fills, so the case that matters is a template a theme
+	 * overrode — which is what this uses.
+	 */
+	public function test_an_unfilled_template_placeholder_is_removed(): void {
+		$this->with_template( '<div>{content}{something_nobody_fills}</div>' );
+
+		$html = Email::make()->subject( 'Your order' )->content( '<p>Thanks.</p>' )->html();
+
+		$this->assertStringContainsString( '<p>Thanks.</p>', $html );
+		$this->assertStringNotContainsString( '{something_nobody_fills}', $html );
+	}
+
+	/**
+	 * One colour is given; the words on it and the links beside it follow.
+	 *
+	 * White words on a pale header and a pale link on a white page are both
+	 * a colour doing as it was told and an email nobody can read.
+	 */
+	public function test_the_words_on_a_colour_can_be_read(): void {
+		$this->with_template( '<div>{color_primary}|{color_on_primary}|{color_link}|{header_align}</div>{content}' );
+
+		$look = static fn( array $context ): string => (string) strstr(
+			Email::make()->subject( 'Hi' )->content( '' )->context( $context )->html(),
+			'</div>',
+			true
+		);
+
+		// Nothing given: what an email has always been drawn in.
+		$this->assertSame( '<div>#2271b1|#ffffff|#2271b1|center', $look( [] ) );
+
+		// A dark colour takes white words and is its own link.
+		$this->assertSame( '<div>#5b21b6|#ffffff|#5b21b6|center', $look( [ 'color_primary' => '#5B21B6' ] ) );
+
+		// A pale one takes dark words, and its links are dark too.
+		$this->assertSame( '<div>#ffe066|#111111|#1d2327|left', $look( [ 'color_primary' => '#FFE066', 'header_align' => 'left' ] ) );
+
+		// Three digits are a colour; either can be said outright.
+		$this->assertSame(
+			'<div>#ffffff|#333333|#0044cc|right',
+			$look(
+				[
+					'color_primary'    => '#fff',
+					'color_on_primary' => '#333333',
+					'color_link'       => '#0044cc',
+					'header_align'     => 'right',
+				]
+			)
+		);
+	}
+
+	/**
+	 * A colour or an alignment that is not one never reaches the markup.
+	 *
+	 * Both go into a `style` attribute, where escaping is not enough: a
+	 * value can close the declaration and open another without a single
+	 * character an escaper would touch.
+	 */
+	public function test_a_colour_that_is_not_one_is_not_used(): void {
+		$this->with_template( '<div style="background: {color_primary}; color: {color_on_primary}; text-align: {header_align}">{content}</div>' );
+
+		$html = Email::make()
+			->subject( 'Hi' )
+			->content( '' )
+			->context(
+				[
+					'color_primary'    => 'red; background: url(//evil.example/x)',
+					'color_on_primary' => 'expression(alert(1))',
+					'header_align'     => 'center; position: fixed',
+				]
+			)
+			->html();
+
+		$this->assertSame( '<div style="background: #2271b1; color: #ffffff; text-align: center"></div>', $html );
+	}
+
+	/**
+	 * Every shipped template can be drawn in a pale colour and read.
+	 */
+	public function test_the_shipped_templates_follow_the_colour(): void {
+		foreach ( [ 'default', 'dark' ] as $template ) {
+			$html = Email::make()
+				->subject( 'Your order' )
+				->content( '<p>Thanks.</p>' )
+				->template( $template )
+				->context( [ 'color_primary' => '#ffe066' ] )
+				->html();
+
+			$this->assertStringContainsString( 'background: #ffe066;', $html, $template );
+			$this->assertStringContainsString( 'color: #111111; font-size: 32px', $html, $template );
+			$this->assertStringNotContainsString( 'color: white; font-size: 32px', $html, $template );
+		}
+
+		foreach ( [ 'default', 'soft', 'notification', 'plain', 'invoice' ] as $template ) {
+			$html = Email::make()->subject( 'Hi' )->content( '' )->template( $template )->context( [ 'color_primary' => '#ffe066' ] )->html();
+
+			$this->assertStringContainsString( 'color: #1d2327;', $html, $template );
+		}
+
+		foreach ( [ 'default', 'dark', 'invoice', 'mono', 'notification', 'plain', 'soft' ] as $template ) {
+			$html = Email::make()->subject( 'Hi' )->content( '' )->template( $template )->html();
+
+			$this->assertDoesNotMatchRegularExpression( '/\{[a-z_]+\}/', (string) preg_replace( '#<style.*?</style>#s', '', $html ), $template );
+		}
+	}
+
+	/**
+	 * The invoice is laid out with tables and wears the brand colour.
+	 *
+	 * It was a flex row, which Outlook and several webmail programs draw
+	 * as a stack: the title under the logo and the rule through both. It
+	 * also drew the brand colour nowhere, and put the footer in the page
+	 * with no size or colour of its own.
+	 */
+	public function test_the_invoice_is_tables_in_the_brand_colour(): void {
+		$html = Email::make()
+			->subject( 'Invoice 1042' )
+			->content( '<p>Thanks.</p>' )
+			->template( 'invoice' )
+			->context(
+				[
+					'color_primary' => '#5b21b6',
+					'footer'        => 'Example Shop<br />1 High Street',
+				]
+			)
+			->html();
+
+		$body = (string) preg_replace( '#<style.*?</style>#s', '', $html );
+
+		$this->assertStringNotContainsString( 'display: flex', $html );
+		$this->assertStringContainsString( 'border-top: 4px solid #5b21b6;', $body );
+		$this->assertMatchesRegularExpression( '#<td class="invoice-title"[^>]*text-align: right[^>]*>\s*Invoice 1042\s*</td>#', $body );
+		$this->assertMatchesRegularExpression( '#<td class="content"[^>]*>\s*<p>Thanks\.</p>\s*</td>#', $body );
+		$this->assertMatchesRegularExpression( '#<td style="[^"]*font-size: 12px[^"]*">\s*Example Shop<br />1 High Street\s*</td>#', $body );
+	}
+
+	/**
+	 * A logo can be held by its height as well as its width.
+	 */
+	public function test_a_logo_can_be_given_a_height(): void {
+		$tall = \SugarCommerce\Emails\Parts\Logo::render(
+			[
+				'url'    => 'https://example.org/logo.png',
+				'height' => 48,
+			]
+		);
+
+		$this->assertStringContainsString( 'max-width: 200px; width: auto; max-height: 48px; height: auto;', $tall );
+
+		// And is as it was without one.
+		$this->assertStringContainsString(
+			'style="max-width: 200px; width: auto;"',
+			\SugarCommerce\Emails\Parts\Logo::render( [ 'url' => 'https://example.org/logo.png' ] )
+		);
+	}
+
+	/**
+	 * The title goes into the template as text; the footer as markup.
+	 *
+	 * The title sits inside an <h1>, and one built from a customer's name
+	 * went in as whatever the name had in it. The footer is drawn by a Part
+	 * and is markup by contract — escaping it would show the tags.
+	 */
+	public function test_the_title_goes_in_as_text_and_the_footer_as_markup(): void {
+		$this->with_template( '<div>{title}|{subtitle}|{footer}|{content}</div>' );
+
+		$html = Email::make()
+			->content( '<p>Thanks.</p>' )
+			->context(
+				[
+					'title'    => 'Order for <script>alert(1)</script>',
+					'subtitle' => 'Smith & Sons',
+					'footer'   => '<p>&copy; Example Shop</p>',
+				]
+			)
+			->html();
+
+		$this->assertStringContainsString( 'Order for &lt;script&gt;alert(1)&lt;/script&gt;', $html );
+		$this->assertStringContainsString( '|Smith &amp; Sons|', $html );
+		$this->assertStringContainsString( '|<p>&copy; Example Shop</p>|<p>Thanks.</p>', $html );
+		$this->assertStringNotContainsString( '<script>', $html );
+	}
+
+	/**
+	 * A template name cannot leave the templates directory.
+	 *
+	 * The name went straight into a path, so `../../wp-config` was a
+	 * template name and anything ending in .html anywhere on the disk could
+	 * be read back as the shell of an email.
+	 */
+	public function test_a_template_name_cannot_leave_the_templates_directory(): void {
+		$this->with_template( '<div>{content}</div>' );
+
+		$outside = sys_get_temp_dir() . '/re-outside.html';
+
+		file_put_contents( $outside, '<div>NOT-A-TEMPLATE</div>' );
+
+		try {
+			$html = Templates::get( '../re-outside' );
+
+			$this->assertStringNotContainsString( 'NOT-A-TEMPLATE', $html );
+			$this->assertSame( '<div>{content}</div>', $html, 'The default should have been used instead.' );
+		} finally {
+			unlink( $outside );
+		}
+	}
+
+	/**
+	 * A theme overrides a template from the folder the plugin names.
+	 *
+	 * A shop keeps its theme copies together (`my-shop/emails/`), so the
+	 * folder is the plugin's to choose; the library's own name stops being
+	 * looked in once another is set, or a theme would have two places to
+	 * keep one file in sync.
+	 */
+	public function test_a_theme_overrides_a_template_from_the_folder_the_plugin_names(): void {
+		$this->with_template( '<div>SHIPPED {content}</div>' );
+
+		$theme = get_stylesheet_directory();
+
+		mkdir( $theme . '/my-shop/emails', 0o777, true );
+		mkdir( $theme . '/sugarcommerce-emails', 0o777, true );
+		file_put_contents( $theme . '/my-shop/emails/default.html', '<div>THEME {content}</div>' );
+		file_put_contents( $theme . '/sugarcommerce-emails/default.html', '<div>OLD-FOLDER {content}</div>' );
+
+		try {
+			$this->assertSame( '<div>OLD-FOLDER {content}</div>', Templates::get( 'default' ) );
+
+			Templates::set_theme_dir( '/my-shop/emails/' );
+
+			$this->assertSame( 'my-shop/emails', Templates::get_theme_dir() );
+			$this->assertSame( '<div>THEME {content}</div>', Templates::get( 'default' ) );
+
+			// A folder that would leave the theme is not a folder in it.
+			Templates::set_theme_dir( '../../elsewhere' );
+
+			$this->assertSame( 'my-shop/emails', Templates::get_theme_dir() );
+		} finally {
+			Templates::set_theme_dir( 'sugarcommerce-emails' );
+			unlink( $theme . '/my-shop/emails/default.html' );
+			unlink( $theme . '/sugarcommerce-emails/default.html' );
+			rmdir( $theme . '/my-shop/emails' );
+			rmdir( $theme . '/my-shop' );
+			rmdir( $theme . '/sugarcommerce-emails' );
+			rmdir( $theme );
+		}
+	}
+
+	/**
+	 * The template knows about the site, in the site's own timezone.
+	 *
+	 * A copyright line that says last year for the first few hours of the new
+	 * one is a small thing that looks like nobody is home.
+	 */
+	public function test_the_template_knows_about_the_site(): void {
+		$this->with_template( '<div>{site_name} — {year} — {content}</div>' );
+
+		$html = Email::make()->content( 'Thanks.' )->html();
+
+		$this->assertStringContainsString( 'Example Shop', $html );
+		$this->assertStringContainsString( gmdate( 'Y' ), $html );
+
+		// And it asked the site for the year rather than the server. On a
+		// site running in UTC the two agree, so the value cannot tell them
+		// apart — which is exactly the case where the bug hides.
+		$this->assertContains( 'Y', $GLOBALS['re_clock'] );
+	}
+
+	/**
+	 * And so does the footer, which fills its own.
+	 */
+	public function test_the_footer_knows_about_the_site(): void {
+		$footer = \SugarCommerce\Emails\Parts\Footer::render(
+			[ 'text' => '&copy; {year} {site_name}' ]
+		);
+
+		$this->assertStringContainsString( gmdate( 'Y' ), $footer );
+		$this->assertStringContainsString( 'Example Shop', $footer );
+		$this->assertContains( 'Y', $GLOBALS['re_clock'] );
+	}
+
+	/**
+	 * Use a template of this test's own, as a theme override would.
+	 *
+	 * @param string $html The template.
+	 *
+	 * @return void
+	 */
+	private function with_template( string $html ): void {
+		$directory = sys_get_temp_dir() . '/re-templates/';
+
+		if ( ! is_dir( $directory ) ) {
+			mkdir( $directory, 0o777, true );
+		}
+
+		file_put_contents( $directory . 'default.html', $html );
+
+		\SugarCommerce\Emails\Templates::set_templates_dir( $directory );
+
+		$this->templates_dir = $directory;
+	}
+
+	/**
+	 * A registered email is sent by name.
+	 */
+	public function test_a_registered_email_is_sent_by_name(): void {
+		$this->tags();
+
+		Emails::add( 'shop', 'order_confirmation', [
+			'subject' => 'Order confirmed',
+			'content' => 'Thanks {customer_name}.',
+		] );
+
+		$sent = Emails::send( 'shop', 'order_confirmation', [
+			'to'   => 'customer@example.test',
+			'data' => $this->order(),
+		] );
+
+		$this->assertTrue( $sent );
+		$this->assertStringContainsString( 'Thanks Jane Doe.', $GLOBALS['re_mail'][0]['message'] );
+	}
+
+	/**
+	 * What the site owner configured beats what the plugin author wrote.
+	 */
+	public function test_the_site_owners_wording_wins(): void {
+		$this->tags();
+
+		Emails::add( 'shop', 'order_confirmation', [
+			'subject'  => 'Order confirmed',
+			'content'  => 'Thanks {customer_name}.',
+			'settings' => static fn(): array => [
+				'subject' => 'Your order is on its way',
+				'content' => 'We are packing it now, {customer_name}.',
+			],
+		] );
+
+		Emails::send( 'shop', 'order_confirmation', [ 'to' => 'customer@example.test', 'data' => $this->order() ] );
+
+		$this->assertSame( 'Your order is on its way', $GLOBALS['re_mail'][0]['subject'] );
+		$this->assertStringContainsString( 'We are packing it now, Jane Doe.', $GLOBALS['re_mail'][0]['message'] );
+	}
+
+	/**
+	 * The site owner's settings are asked for once per send.
+	 *
+	 * They were asked for twice — once to see whether the email was turned
+	 * on, and again to build it — which is nothing for a callback that reads
+	 * an option and something for one that runs a query.
+	 */
+	public function test_the_site_owners_settings_are_asked_for_once(): void {
+		$asked = 0;
+
+		Emails::add( 'shop', 'order_confirmation', [
+			'content'  => 'Thanks.',
+			'settings' => static function () use ( &$asked ): array {
+				++$asked;
+
+				return [ 'enabled' => true ];
+			},
+		] );
+
+		Emails::send( 'shop', 'order_confirmation', [ 'to' => 'customer@example.test' ] );
+
+		$this->assertSame( 1, $asked );
+	}
+
+	/**
+	 * The recipient the site owner configured is used when the call names
+	 * nobody.
+	 *
+	 * A receipt goes to whoever the call names. A sale notification goes to
+	 * whoever the owner typed into the settings screen, and that is the case
+	 * where nothing at the call site knows the address.
+	 */
+	public function test_the_site_owners_recipient_is_used_when_the_call_names_nobody(): void {
+		Emails::add( 'shop', 'sale_notification', [
+			'content'  => 'A sale.',
+			'settings' => static fn(): array => [ 'to' => [ 'owner@example.test', 'accounts@example.test' ] ],
+		] );
+
+		$this->assertTrue( Emails::send( 'shop', 'sale_notification' ) );
+		$this->assertSame( [ 'owner@example.test', 'accounts@example.test' ], $GLOBALS['re_mail'][0]['to'] );
+
+		// And the call still wins when it does name somebody.
+		Emails::send( 'shop', 'sale_notification', [ 'to' => 'customer@example.test' ] );
+
+		$this->assertSame( [ 'customer@example.test' ], $GLOBALS['re_mail'][1]['to'] );
+	}
+
+	/**
+	 * An email the site owner turned off is not sent, and is not an error.
+	 *
+	 * It is a setting. Reporting it as a failure fills a log with somebody's
+	 * preference.
+	 */
+	public function test_an_email_turned_off_is_not_sent_and_not_an_error(): void {
+		Emails::add( 'shop', 'order_confirmation', [
+			'content'  => 'Thanks.',
+			'settings' => static fn(): array => [ 'enabled' => false ],
+		] );
+
+		$this->assertTrue( Emails::send( 'shop', 'order_confirmation', [ 'to' => 'customer@example.test' ] ) );
+		$this->assertSame( [], $GLOBALS['re_mail'] );
+	}
+
+	/**
+	 * An email nobody registered is an error that says so.
+	 */
+	public function test_an_unregistered_email_says_so(): void {
+		$sent = Emails::send( 'shop', 'nothing_like_this', [ 'to' => 'customer@example.test' ] );
+
+		$this->assertInstanceOf( WP_Error::class, $sent );
+		$this->assertStringContainsString( 'nothing_like_this', $sent->get_error_message() );
+	}
+
+	/* ---------------------------------------------------------------------
+	 * The seam with the field kit
+	 * ------------------------------------------------------------------ */
+
+	/**
+	 * The tags come out in the shape the kit's editor takes.
+	 *
+	 * This library owns the tags and the kit draws the chooser, so this is
+	 * the whole seam between them — one method rather than two shapes each
+	 * side hopes the other agrees about.
+	 */
+	public function test_the_tags_come_out_in_the_editors_shape(): void {
+		Tags::add( 'shop', 'customer_name', [
+			'label'       => 'Customer name',
+			'description' => 'Who the order belongs to',
+		] );
+
+		$this->assertSame(
+			[
+				[
+					'name'        => 'Customer name',
+					'tag'         => '{customer_name}',
+					'description' => 'Who the order belongs to',
+				],
+			],
+			Tags::for_editor( [ 'shop' ] )
+		);
+	}
+
+	/**
+	 * A preview uses the samples rather than asking for real data.
+	 */
+	public function test_a_preview_uses_the_samples(): void {
+		$this->tags();
+
+		$html = Email::make()->content( 'Hello {customer_name}.' )->tags( 'shop' )->preview();
+
+		$this->assertStringContainsString( 'Hello Jane Doe.', $html );
+	}
+
+	/**
+	 * A tag with no sample shows as itself rather than as a gap.
+	 *
+	 * A blank in a preview reads as a tag that is broken; the tag's own name
+	 * reads as one nobody wrote a sample for, which is what it is.
+	 */
+	public function test_a_tag_with_no_sample_shows_as_itself(): void {
+		Tags::add( 'shop', 'order_id', [ 'callback' => static fn(): string => '1234' ] );
+
+		$this->assertStringContainsString(
+			'{order_id}',
+			( new Processor( [ 'shop' ] ) )->preview( 'Order {order_id}' )
+		);
+	}
+
+	/**
+	 * The filters carry this build's own prefix.
+	 *
+	 * They were named `email_template_tag_{name}` for everybody, so two
+	 * plugins each bundling a prefixed copy would filter each other's emails
+	 * — one plugin's callback rewriting the other's order confirmation.
+	 */
+	public function test_the_filters_are_named_per_build(): void {
+		$this->tags();
+
+		add_filter( Runtime::hook( 'tag_customer_name' ), static fn(): string => 'Somebody else' );
+
+		$this->assertStringContainsString(
+			'Somebody else',
+			( new Processor( [ 'shop' ] ) )->process( '{customer_name}', $this->order() )
+		);
+
+		// And that the name is derived rather than being that string.
+		// Unprefixed the two are identical, so asserting the value proves
+		// nothing — this asks the rule what a prefixed build would produce.
+		$this->assertSame( 'emails', Runtime::prefix_for( 'SugarCommerce\\Emails\\Utils' ) );
+		$this->assertSame( 'myplugin-emails', Runtime::prefix_for( 'MyPlugin\\SugarCommerce\\Emails\\Utils' ) );
+		$this->assertSame( 'edd-fraud-filter-emails', Runtime::prefix_for( 'EDD_Fraud_Filter\\SugarCommerce\\Emails\\Utils' ) );
+	}
+
+	/**
+	 * The template filters are this copy's too: they used to be
+	 * `register_emails_template` for every plugin bundling the library.
+	 */
+	public function test_the_template_filters_are_named_per_build(): void {
+		add_filter( Runtime::hook( 'template' ), static fn( string $html, string $name ): string => '<div>' . $name . ' {content}</div>' );
+		add_filter( Runtime::hook( 'template_options' ), static fn( array $options ): array => $options + [ 'extra' => 'Extra' ] );
+
+		$this->assertSame( '<div>plain {content}</div>', Templates::get( 'plain' ) );
+		$this->assertSame( 'Extra', Templates::get_options()['extra'] );
+	}
+}
+
+/**
+ * A component a plugin might add.
+ */
+final class GiftNote extends \SugarCommerce\Emails\Abstracts\Component {
+
+	/**
+	 * Draw it.
+	 *
+	 * @param array<string, mixed> $args What to draw.
+	 *
+	 * @return string
+	 */
+	public static function render( array $args = [] ): string {
+		return sprintf( '<p>%s</p>', esc_html( (string) ( $args['note'] ?? '' ) ) );
+	}
+
+	/**
+	 * What a string callback is giving.
+	 *
+	 * @return string
+	 */
+	public static function primary_key(): string {
+		return 'note';
+	}
+}

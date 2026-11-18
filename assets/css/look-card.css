@@ -1,0 +1,282 @@
+/**
+ * The Look card of sugarcommerce/emails.
+ *
+ * The pictures of each design, and the email drawn under the card.
+ */
+
+/* -------------------------------------------------------------------------
+ * The column of email cards
+ *
+ * Each card is an accordion, which keeps sixteen pixels under itself; the
+ * column they are in has a sixteen pixel gap of its own. Together the email
+ * cards stood twice as far apart as Sender and Look above them. The field
+ * library has the same rule from its next release, and this can go then.
+ * ---------------------------------------------------------------------- */
+
+.field-kit__settings-stack > .field-kit__field > .field-kit__email {
+	margin-bottom: 0;
+}
+
+/* -------------------------------------------------------------------------
+ * The folded Look card
+ *
+ * The script puts the card's description under its title while it is
+ * folded, the way each email card says a line about itself. Open, the
+ * description is on show in its own place and this one is put away.
+ * ---------------------------------------------------------------------- */
+
+.sugarcommerce-emails-card-words {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	min-width: 0;
+}
+
+.sugarcommerce-emails-card-caption {
+	color: #50575e;
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.5;
+}
+
+details[open] > summary .sugarcommerce-emails-card-caption {
+	display: none;
+}
+
+/* -------------------------------------------------------------------------
+ * A design, as a small picture
+ *
+ * A page on a backdrop: a top, a heading in it, and three lines of wording
+ * of which the last is a link. Each design moves and colours those the way
+ * the real one does, in the colour that is in the colour box -- the script
+ * sets --sugarcommerce-emails-look-colour on the card as the box changes.
+ * ---------------------------------------------------------------------- */
+
+.sugarcommerce-emails-look {
+	--look-colour: var(--sugarcommerce-emails-look-colour, #2271b1);
+	--look-on-colour: var(--sugarcommerce-emails-look-on-colour, #fff);
+
+	display: block;
+	padding: 10px 14px;
+	background: #f6f7f7;
+}
+
+.sugarcommerce-emails-look__page {
+	display: block;
+	overflow: hidden;
+	border-radius: 4px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+}
+
+.sugarcommerce-emails-look__top {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	height: 22px;
+	background: var(--look-colour);
+}
+
+.sugarcommerce-emails-look__title {
+	display: block;
+	width: 46%;
+	height: 5px;
+	border-radius: 3px;
+	background: var(--look-on-colour);
+}
+
+.sugarcommerce-emails-look__body {
+	display: block;
+	padding: 8px 10px 10px;
+}
+
+.sugarcommerce-emails-look__line {
+	display: block;
+	height: 3px;
+	margin: 0 0 5px;
+	border-radius: 2px;
+	background: #c3c4c7;
+}
+
+.sugarcommerce-emails-look__line:nth-child(2) {
+	width: 82%;
+}
+
+.sugarcommerce-emails-look__line--link {
+	width: 38%;
+	margin-bottom: 0;
+	background: var(--look-colour);
+}
+
+/* Soft: a pale wash across the top, the heading dark on it. */
+.sugarcommerce-emails-look--soft {
+	background: #fafbfc;
+}
+
+.sugarcommerce-emails-look--soft .sugarcommerce-emails-look__top {
+	background: linear-gradient(135deg, #eef1f6, #cdd5e3);
+}
+
+.sugarcommerce-emails-look--soft .sugarcommerce-emails-look__title {
+	background: #2d3748;
+}
+
+/* Black and white. */
+.sugarcommerce-emails-look--mono {
+	background: #fff;
+}
+
+.sugarcommerce-emails-look--mono .sugarcommerce-emails-look__page {
+	box-shadow: 0 0 0 1px #1d2327;
+	border-radius: 0;
+}
+
+.sugarcommerce-emails-look--mono .sugarcommerce-emails-look__top {
+	background: #000;
+}
+
+.sugarcommerce-emails-look--mono .sugarcommerce-emails-look__title {
+	background: #fff;
+}
+
+.sugarcommerce-emails-look--mono .sugarcommerce-emails-look__line--link {
+	background: #000;
+}
+
+/* Compact: a narrow framed note, its heading on grey. */
+.sugarcommerce-emails-look--notification {
+	padding-inline: 30px;
+	background: #fff;
+}
+
+.sugarcommerce-emails-look--notification .sugarcommerce-emails-look__page {
+	box-shadow: 0 0 0 1px #dcdcde;
+}
+
+.sugarcommerce-emails-look--notification .sugarcommerce-emails-look__top {
+	justify-content: flex-start;
+	height: 16px;
+	padding-inline: 10px;
+	background: #f6f7f7;
+	border-bottom: 1px solid #dcdcde;
+}
+
+.sugarcommerce-emails-look--notification .sugarcommerce-emails-look__title {
+	background: #1d2327;
+}
+
+/* Plain: a letter. No card, a rule under the heading. */
+.sugarcommerce-emails-look--plain {
+	background: #fff;
+}
+
+.sugarcommerce-emails-look--plain .sugarcommerce-emails-look__page {
+	box-shadow: none;
+}
+
+.sugarcommerce-emails-look--plain .sugarcommerce-emails-look__top {
+	justify-content: flex-start;
+	height: 16px;
+	margin-inline: 10px;
+	background: none;
+	border-bottom: 1px solid #c3c4c7;
+}
+
+.sugarcommerce-emails-look--plain .sugarcommerce-emails-look__title {
+	background: #1d2327;
+}
+
+/* Dark. */
+.sugarcommerce-emails-look--dark {
+	background: #0f0f0f;
+}
+
+.sugarcommerce-emails-look--dark .sugarcommerce-emails-look__page {
+	background: #1a1a1a;
+	box-shadow: none;
+}
+
+.sugarcommerce-emails-look--dark .sugarcommerce-emails-look__line {
+	background: #50575e;
+}
+
+.sugarcommerce-emails-look--dark .sugarcommerce-emails-look__line--link {
+	background: #9ec5fe;
+}
+
+/* Invoice: a bare page, the heading at the right over a rule, and the
+   wording as the columns of a table. */
+.sugarcommerce-emails-look--invoice {
+	background: #fff;
+}
+
+.sugarcommerce-emails-look--invoice .sugarcommerce-emails-look__page {
+	box-shadow: 0 0 0 1px #dcdcde;
+	border-radius: 0;
+}
+
+.sugarcommerce-emails-look--invoice .sugarcommerce-emails-look__top {
+	justify-content: flex-end;
+	height: 16px;
+	margin-inline: 10px;
+	background: none;
+	border-bottom: 1px solid #1d2327;
+}
+
+.sugarcommerce-emails-look--invoice .sugarcommerce-emails-look__title {
+	width: 30%;
+	background: #8c8f94;
+}
+
+.sugarcommerce-emails-look--invoice .sugarcommerce-emails-look__line {
+	width: 100%;
+	background:
+		linear-gradient(
+			90deg,
+			#c3c4c7 0 52%,
+			transparent 52% 62%,
+			#c3c4c7 62% 72%,
+			transparent 72% 82%,
+			#c3c4c7 82% 100%
+		);
+	border-radius: 0;
+}
+
+.sugarcommerce-emails-look--invoice .sugarcommerce-emails-look__line--link {
+	width: 38%;
+	margin-left: auto;
+	background: #1d2327;
+}
+
+/* -------------------------------------------------------------------------
+ * The email, drawn in the look on the card
+ * ---------------------------------------------------------------------- */
+
+.sugarcommerce-emails-look-preview {
+	transition: opacity .15s;
+}
+
+/* Dimmed while the next one is on its way, and left in place: an empty
+   box between two previews made the page jump on every keystroke. */
+.sugarcommerce-emails-look-preview.is-drawing {
+	opacity: .55;
+}
+
+.sugarcommerce-emails-look-preview iframe {
+	display: block;
+}
+
+.sugarcommerce-emails-look-preview__status {
+	margin: 0;
+	padding: 24px;
+	border: 1px dashed #c3c4c7;
+	border-radius: 4px;
+	color: #646970;
+	text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sugarcommerce-emails-look-preview {
+		transition: none;
+	}
+}

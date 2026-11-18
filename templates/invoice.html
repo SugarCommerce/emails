@@ -1,0 +1,98 @@
+<!-- Template: Invoice -->
+<!-- Description: A plain page for an invoice or a receipt: the logo and the title either side of a rule, then the content -->
+<!-- Supports: logo, title, content, footer, colors -->
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{subject}</title>
+    <!--[if mso]>
+    <noscript>
+        <xml>
+            <o:OfficeDocumentSettings>
+                <o:PixelsPerInch>96</o:PixelsPerInch>
+            </o:OfficeDocumentSettings>
+        </xml>
+    </noscript>
+    <![endif]-->
+    <style>
+        /* Reset and base styles */
+        body, table, td, a {
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+
+        table, td {
+            mso-table-lspace: 0pt;
+            mso-table-rspace: 0pt;
+        }
+
+        img {
+            -ms-interpolation-mode: bicubic;
+            border: 0;
+            outline: none;
+            text-decoration: none;
+        }
+
+        /* Links are the brand colour, or near-black where the brand colour is
+           too pale to read on white. */
+        a {
+            color: {color_link};
+        }
+
+        /* Mobile responsive styles */
+        @media only screen and (max-width: 600px) {
+            .container {
+                width: 100% !important;
+            }
+
+            .page {
+                padding: 24px 16px !important;
+            }
+
+            .invoice-title {
+                font-size: 22px !important;
+            }
+        }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #ffffff;">
+<!-- A table and not flex: Outlook and several webmail programs draw flex as a
+     stack, which put the title under the logo and the rule through both. -->
+<table class="container" role="presentation" width="680" cellpadding="0" cellspacing="0" align="center" style="margin: 0 auto; width: 100%; max-width: 680px;">
+    <tr>
+        <!-- The one place the brand colour is drawn: a rule across the top of the page. -->
+        <td class="page" style="padding: 40px 24px; border-top: 4px solid {color_primary};">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td style="padding: 0 16px 20px 0; border-bottom: 1px solid #d2d2d7; text-align: left; vertical-align: middle;">
+                        {logo}
+                    </td>
+                    <td class="invoice-title" style="padding: 0 0 20px; border-bottom: 1px solid #d2d2d7; text-align: right; vertical-align: middle; color: #6e6e73; font-size: 28px; font-weight: 300; line-height: 1.2;">
+                        {title}
+                    </td>
+                </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td class="content" style="padding: 28px 0 0; color: #1d1d1f; font-size: 14px; line-height: 1.6;">
+                        {content}
+                    </td>
+                </tr>
+            </table>
+
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                    <td style="padding: 32px 0 0; color: #6e6e73; font-size: 12px; line-height: 1.6; text-align: left;">
+                        {footer}
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
+</body>
+</html>
