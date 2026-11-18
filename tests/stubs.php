@@ -185,6 +185,30 @@ if ( ! function_exists( 'get_template_directory' ) ) {
 	}
 }
 
+/*
+ * Core's locate_template(), without loading: the child theme, then the
+ * parent (the theme-compat folder never holds an email).
+ */
+if ( ! function_exists( 'locate_template' ) ) {
+	function locate_template( $template_names, $load = false, $load_once = true, $args = array() ) {
+		foreach ( (array) $template_names as $template_name ) {
+			if ( ! $template_name ) {
+				continue;
+			}
+
+			if ( file_exists( get_stylesheet_directory() . '/' . $template_name ) ) {
+				return get_stylesheet_directory() . '/' . $template_name;
+			}
+
+			if ( file_exists( get_template_directory() . '/' . $template_name ) ) {
+				return get_template_directory() . '/' . $template_name;
+			}
+		}
+
+		return '';
+	}
+}
+
 if ( ! function_exists( 'trailingslashit' ) ) {
 	function trailingslashit( $value ) {
 		return rtrim( (string) $value, '/\\' ) . '/';
@@ -481,14 +505,36 @@ if ( ! function_exists( 'site_url' ) ) {
 	}
 }
 
-if ( ! function_exists( 'wp_enqueue_style' ) ) {
-	function wp_enqueue_style( $handle, $src = '', $deps = [], $ver = false, $media = 'all' ) {
-		$GLOBALS['re_enqueued'][] = [ 'style', $handle, $src, $ver ];
+/*
+ * What SugarCommerce\Plugin\Assets calls: it registers, then enqueues the
+ * handle, and a test reads what was registered.
+ */
+if ( ! function_exists( 'wp_normalize_path' ) ) {
+	function wp_normalize_path( $path ) {
+		return (string) preg_replace( '#/+#', '/', str_replace( '\\', '/', (string) $path ) );
 	}
 }
 
-if ( ! function_exists( 'wp_enqueue_script' ) ) {
-	function wp_enqueue_script( $handle, $src = '', $deps = [], $ver = false, $args = [] ) {
-		$GLOBALS['re_enqueued'][] = [ 'script', $handle, $src, $ver ];
+if ( ! function_exists( 'wp_register_style' ) ) {
+	function wp_register_style( $handle, $src, $deps = [], $ver = false, $media = 'all' ) {
+		$GLOBALS['re_enqueued'][] = [ 'style', $handle, $src, $ver ];
+
+		return true;
 	}
+}
+
+if ( ! function_exists( 'wp_register_script' ) ) {
+	function wp_register_script( $handle, $src, $deps = [], $ver = false, $args = [] ) {
+		$GLOBALS['re_enqueued'][] = [ 'script', $handle, $src, $ver ];
+
+		return true;
+	}
+}
+
+if ( ! function_exists( 'wp_enqueue_style' ) ) {
+	function wp_enqueue_style( $handle, $src = '', $deps = [], $ver = false, $media = 'all' ) {}
+}
+
+if ( ! function_exists( 'wp_enqueue_script' ) ) {
+	function wp_enqueue_script( $handle, $src = '', $deps = [], $ver = false, $args = [] ) {}
 }

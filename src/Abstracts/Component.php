@@ -24,28 +24,6 @@ use SugarCommerce\Emails\Interfaces\Component as ComponentInterface;
 abstract class Component implements ComponentInterface {
 
 	/**
-	 * Convert hex color to rgba
-	 *
-	 * @param string $hex   Hex color code
-	 * @param float  $alpha Alpha value (0-1)
-	 *
-	 * @return string RGBA color string
-	 * @since 1.0.0
-	 */
-	protected static function hex_to_rgba( string $hex, float $alpha = 1 ): string {
-		$hex = ltrim( $hex, '#' );
-
-		if ( strlen( $hex ) === 3 ) {
-			$hex = $hex[0] . $hex[0] . $hex[1] . $hex[1] . $hex[2] . $hex[2];
-		}
-
-		$r = hexdec( substr( $hex, 0, 2 ) );
-		$g = hexdec( substr( $hex, 2, 2 ) );
-		$b = hexdec( substr( $hex, 4, 2 ) );
-
-		return sprintf( 'rgba(%d, %d, %d, %s)', $r, $g, $b, $alpha );
-	}
-	/**
 	 * What a tag's callback is giving when it returns a string rather than
 	 * an array.
 	 *

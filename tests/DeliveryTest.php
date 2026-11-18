@@ -21,7 +21,7 @@ use SugarCommerce\Emails\Transports\Memory;
 use SugarCommerce\Emails\Transports\Postmark;
 use SugarCommerce\Emails\Transports\Resend;
 use SugarCommerce\Emails\Transports\WpMail;
-use SugarCommerce\Emails\Utils\Assets;
+use SugarCommerce\Plugin\Assets;
 use SugarCommerce\Emails\Utils\Runtime;
 use WP_Error;
 
@@ -460,17 +460,20 @@ final class DeliveryTest extends TestCase {
 
 	// Assets ------------------------------------------------------------------
 
-	public function test_an_asset_is_found_and_nothing_outside_assets_is(): void {
-		$this->assertNull( Assets::resolve( '../src/Email.php' ) );
-		$this->assertNull( Assets::resolve( 'css/nothing.css' ) );
-		$this->assertNull( Assets::url_of( '/nowhere/file.css' ) );
+	/**
+	 * The look card's files are found by sugarcommerce/plugin's Assets from
+	 * the card's own file: this package's `assets/`, and nothing outside it.
+	 */
+	public function test_the_look_cards_assets_are_this_packages(): void {
+		$GLOBALS['re_enqueued'] = [];
 
-		$this->assertSame( 'https://example.test/wp-content/plugins/x/a.css', Assets::url_of( WP_CONTENT_DIR . '/plugins/x/a.css' ) );
+		$this->mailer( [ 'look_card' => [ 'screen' => static fn(): bool => true ] ] )->look_card()->assets();
 
 		// Here the library sits under the site root.
-		$found = Assets::resolve( 'css/look-card.css' );
-
-		$this->assertSame( 'https://example.test/assets/css/look-card.css', $found['url'] );
-		$this->assertSame( (string) filemtime( dirname( __DIR__ ) . '/assets/css/look-card.css' ), $found['version'] );
+		$this->assertSame(
+			[ 'https://example.test/assets/css/look-card.css', 'https://example.test/assets/js/look-card.js' ],
+			array_column( $GLOBALS['re_enqueued'], 2 )
+		);
+		$this->assertNull( Assets::url( dirname( __DIR__ ) . '/src/Mailer/LookCard.php', '../src/Email.php' ) );
 	}
 }

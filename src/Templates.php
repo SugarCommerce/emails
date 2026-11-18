@@ -253,18 +253,18 @@ class Templates {
 	 * @access private
 	 */
 	private static function get_theme_template( string $template ) {
-		$locations = [
-			get_stylesheet_directory() . '/' . self::$theme_dir . '/' . $template . '.html',
-			get_template_directory() . '/' . self::$theme_dir . '/' . $template . '.html',
-		];
+		// Core's lookup: the child theme, then the parent. Only finding the
+		// file is core's; reading it as markup rather than loading it as
+		// PHP, the folder the plugin names, and falling back to the
+		// library's own template (in get()) are what core has no part in.
+		$file = locate_template( self::$theme_dir . '/' . $template . '.html' );
 
-		foreach ( $locations as $file ) {
-			if ( file_exists( $file ) ) {
-				return file_get_contents( $file );
-			}
+		if ( '' === $file ) {
+			return false;
 		}
 
-		return false;
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- A local file in the theme, not a URL.
+		return file_get_contents( $file );
 	}
 
 	/**

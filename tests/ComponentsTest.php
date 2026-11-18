@@ -20,6 +20,15 @@ use SugarCommerce\Emails\Render\Components;
 final class ComponentsTest extends TestCase {
 
 	/**
+	 * An alert's background is its colour at a tenth, as it always was.
+	 */
+	public function test_an_alert_is_tinted_with_its_colour(): void {
+		$html = Alert::render( [ 'message' => 'Paid.', 'type' => 'success' ] );
+
+		$this->assertStringContainsString( 'background: rgba(16, 185, 129, 0.1); border-left: 4px solid #10b981;', $html );
+	}
+
+	/**
 	 * Reset the stubbed globals and the registries.
 	 */
 	protected function setUp(): void {

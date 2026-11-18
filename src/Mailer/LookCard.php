@@ -14,8 +14,8 @@ namespace SugarCommerce\Emails\Mailer;
 
 use SugarCommerce\Emails\Emails;
 use SugarCommerce\Emails\Mailer;
-use SugarCommerce\Emails\Utils\Assets;
 use SugarCommerce\Emails\Utils\Runtime;
+use SugarCommerce\Plugin\Assets;
 
 /**
  * Where a site chooses what its emails look like, and sees it.
@@ -228,8 +228,8 @@ final class LookCard {
 			return;
 		}
 
-		Assets::style( Runtime::handle( 'look-card' ), 'css/look-card.css' );
-		Assets::script( Runtime::handle( 'look-card' ), 'js/look-card.js' );
+		Assets::enqueue_style( Runtime::handle( 'look-card' ), __FILE__, 'css/look-card.css' );
+		Assets::enqueue_script( Runtime::handle( 'look-card' ), __FILE__, 'js/look-card.js' );
 	}
 
 	/**

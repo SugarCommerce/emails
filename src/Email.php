@@ -13,8 +13,8 @@ declare( strict_types=1 );
 namespace SugarCommerce\Emails;
 
 use SugarCommerce\Emails\Render\Processor;
-use SugarCommerce\Emails\Utils\Color;
 use SugarCommerce\Emails\Utils\Runtime;
+use SugarCommerce\Text\Display\Color;
 use WP_Error;
 
 /**
@@ -722,9 +722,15 @@ final class Email {
 	private static function look( array $replacements, array $given ): array {
 		$primary = Color::hex( $replacements['color_primary'] ?? '', '#2271b1' );
 
+		// Whether the colour is light is WCAG's call (Color::contrast); what
+		// goes with a light one is the email's own: near-black words, not
+		// pure black, and a link in the admin's near-black, which its
+		// underline still marks as a link, rather than a pale one on white.
+		$light = Color::is_light( $primary );
+
 		$replacements['color_primary']    = $primary;
-		$replacements['color_on_primary'] = Color::hex( $given['color_on_primary'] ?? '', Color::readable_on( $primary ) );
-		$replacements['color_link']       = Color::hex( $given['color_link'] ?? '', Color::link( $primary ) );
+		$replacements['color_on_primary'] = Color::hex( $given['color_on_primary'] ?? '', $light ? '#111111' : '#ffffff' );
+		$replacements['color_link']       = Color::hex( $given['color_link'] ?? '', $light ? '#1d2327' : $primary );
 
 		$align = (string) ( $given['header_align'] ?? '' );
 

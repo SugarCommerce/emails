@@ -13,6 +13,7 @@ declare( strict_types=1 );
 namespace SugarCommerce\Emails\Components;
 
 use SugarCommerce\Emails\Abstracts\Component;
+use SugarCommerce\Text\Display\Color;
 
 /**
  * Alert Component
@@ -58,7 +59,7 @@ class Alert extends Component {
 		}
 
 		$color    = self::COLORS[ $type ] ?? self::COLORS['info'];
-		$bg_color = self::hex_to_rgba( $color, 0.1 );
+		$bg_color = Color::rgba( $color, 0.1 );
 		$title    = trim( (string) ( $args['title'] ?? '' ) );
 
 		// A title leads the message, in bold: "Test mode. Nothing was charged."

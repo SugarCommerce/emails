@@ -100,6 +100,14 @@ file of the same name in its own folder -- `sugarcommerce-emails/` unless the pl
 \SugarCommerce\Emails\Templates::set_theme_dir( 'my-shop/emails' );
 ```
 
+Finding the theme's file is core's `locate_template()`; the file is read as markup, not loaded as PHP, and without one
+the shipped design is used.
+
+One colour draws the email: `color_primary`. The words on it and the links beside it follow unless given
+(`color_on_primary`, `color_link`): whether the colour is light is WCAG's contrast (`SugarCommerce\Text\Display\Color`),
+and a light colour takes near-black words (`#111111`) and near-black links (`#1d2327`); a dark one takes white words and
+is its own link.
+
 ## Editable emails: the Mailer
 
 A `Mailer` is what a plugin puts round its emails so the owner can change them: the wording, a switch, where a note to
@@ -184,6 +192,11 @@ configuration key, option key and `{prefix}_` hook of the Mailer keeps its name.
 | `Email` headers kept as lines | kept apart (`Email::message()`); a second `from()` replaces the first |
 | `ArrayPress\FormatUtils\Text::humanize()` labels | `SugarCommerce\Text\Text::humanize()` |
 | `order_items` via wp-money's `format_money()` | `format` callable, `sugarcommerce/money`, or strings; translated words |
+| `ArrayPress\RegisterEmails\Utils\Color::hex( $value, $fallback )` | `SugarCommerce\Text\Display\Color::hex( $value, $fallback )` (sugarcommerce/text, the one colour helper); it now also reads a colour without its `#` |
+| `Utils\Color::brightness()`, `::is_light()` (YIQ brightness above 150) | `Text\Display\Color::is_light()` / `::contrast()`, WCAG: a mid-tone colour (red `#ef4444`, green `#22c55e`, blue `#3b82f6`, mid grey) is now light, so it takes near-black words and links |
+| `Utils\Color::readable_on()`, `::link()` | inside `Email` (`#111111` / `#1d2327` on a light colour, as before) |
+| `Abstracts\Component::hex_to_rgba( $hex, $alpha )` | `Text\Display\Color::rgba( $hex, $alpha )` |
+| `Utils\Assets::style()` / `::script()` / `::resolve()` / `::url_of()`, wp-composer-assets | removed: `SugarCommerce\Plugin\Assets::enqueue_style( $handle, __FILE__, $file )` / `::enqueue_script()` / `::resolve()` / `::path_to_url()` (sugarcommerce/plugin, the one home for asset URLs) |
 | `activity_log`, `event_details`, `info_box`, `product_list`, `progress_bar`, `raw_html`, `reward_balance`, `shipping_tracker`, `stats_grid`, `subscription_status`, `testimonial` | removed: nothing used them. `info_box` is `alert` with a `title`; `raw_html` is a tag of type `html` |
 
 From the retired SaaS packages: `mailer`'s transports (`Transport`, `SendResult` as `Result`, `Postmark`, `Resend`,
@@ -197,6 +210,7 @@ front-matter files (the Mailer's look, the seven designs and gettext do those jo
 
 * PHP 8.3 or later
 * WordPress 7.1 or later
+* `sugarcommerce/text` (colour, labels) and `sugarcommerce/plugin` (the look card's asset URLs)
 
 ## License
 

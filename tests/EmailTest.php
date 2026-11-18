@@ -600,6 +600,10 @@ final class EmailTest extends TestCase {
 		// A pale one takes dark words, and its links are dark too.
 		$this->assertSame( '<div>#ffe066|#111111|#1d2327|left', $look( [ 'color_primary' => '#FFE066', 'header_align' => 'left' ] ) );
 
+		// Light or not is WCAG's call: a mid red reads better in dark words
+		// (5.6:1) than in white (3.8:1), which brightness alone got wrong.
+		$this->assertSame( '<div>#ef4444|#111111|#1d2327|center', $look( [ 'color_primary' => '#EF4444' ] ) );
+
 		// Three digits are a colour; either can be said outright.
 		$this->assertSame(
 			'<div>#ffffff|#333333|#0044cc|right',
