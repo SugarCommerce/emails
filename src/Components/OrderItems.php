@@ -21,7 +21,8 @@ use SugarCommerce\Money\Money;
  * An amount is either an integer in the currency's smallest unit -- cents,
  * pence -- or a string that is already written out. An integer is written
  * out by `format` when one is given, by sugarcommerce/money when it is
- * installed, and as the currency code and two decimals when neither is: a
+ * installed, and as the currency code and its own decimals (two for most,
+ * none for JPY, three for BHD) when neither is: a
  * table of order lines should not need an opinion about currency, and a
  * plugin that has already formatted its amounts should not have them
  * formatted again.
@@ -30,6 +31,21 @@ use SugarCommerce\Money\Money;
  * has no English left in its table.
  */
 class OrderItems extends Component {
+
+	/**
+	 * Currencies with no minor unit: an amount is a whole number of yen,
+	 * won, francs.
+	 *
+	 * @var string[]
+	 */
+	private const ZERO_DECIMAL = [ 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' ];
+
+	/**
+	 * Currencies with three digits after the point.
+	 *
+	 * @var string[]
+	 */
+	private const THREE_DECIMAL = [ 'bhd', 'jod', 'kwd', 'omr', 'tnd' ];
 
 	/**
 	 * Draw it.
@@ -163,7 +179,32 @@ class OrderItems extends Component {
 			return Money::format( $amount, [ 'currency' => $currency ] );
 		}
 
-		return strtoupper( $currency ) . ' ' . number_format( $amount / 100, 2 );
+		$decimals = self::decimals( $currency );
+
+		return strtoupper( $currency ) . ' ' . number_format( $amount / ( 10 ** $decimals ), $decimals );
+	}
+
+	/**
+	 * How many digits a currency has after the point, for the fallback.
+	 *
+	 * Two for nearly all of them, but dividing by 100 is wrong for twenty:
+	 * none for JPY, KRW, VND, the CFA francs and the rest of the fifteen
+	 * Stripe calls zero-decimal, and three for the five dinars and rials,
+	 * the same list sugarcommerce/money keeps. Without it ¥1,000 is written
+	 * as "JPY 10.00".
+	 *
+	 * @param string $currency The currency code.
+	 *
+	 * @return int
+	 */
+	private static function decimals( string $currency ): int {
+		$code = strtolower( trim( $currency ) );
+
+		if ( in_array( $code, self::ZERO_DECIMAL, true ) ) {
+			return 0;
+		}
+
+		return in_array( $code, self::THREE_DECIMAL, true ) ? 3 : 2;
 	}
 
 	/**

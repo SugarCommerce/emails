@@ -72,7 +72,7 @@ Tags::add( 'shop', 'items', [
 ```
 
 `order_items` takes integer amounts in the smallest unit (written out by your `format` callable, by
-`sugarcommerce/money` when installed, or as `EUR 49.99`) or strings already written out, and every word in it can be
+`sugarcommerce/money` when installed, or as `EUR 49.99`, `JPY 1,000`, `BHD 1.000` with the currency's own decimals) or strings already written out, and every word in it can be
 replaced through `labels`. Add your own with the `Runtime::hook( 'components' )` filter (a class
 implementing `Interfaces\Component`).
 

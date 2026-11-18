@@ -88,6 +88,16 @@ final class ComponentsTest extends TestCase {
 		$this->assertSame( '', OrderItems::render( [ 'items' => [] ] ) );
 	}
 
+	public function test_an_amount_with_no_formatter_uses_the_currencys_own_decimals(): void {
+		$this->assertSame( 'JPY 1,000', OrderItems::amount( 1000, 'jpy' ) );
+		$this->assertSame( 'KRW 5,000', OrderItems::amount( 5000, 'KRW' ) );
+		$this->assertSame( 'XOF 250', OrderItems::amount( 250, 'xof' ) );
+		$this->assertSame( 'BHD 1.000', OrderItems::amount( 1000, 'bhd' ) );
+		$this->assertSame( 'KWD 12.345', OrderItems::amount( 12345, 'kwd' ) );
+		$this->assertSame( 'GBP 1,234.56', OrderItems::amount( 123456, 'gbp' ) );
+		$this->assertSame( 'XYZ 1.00', OrderItems::amount( 100, 'xyz' ) );
+	}
+
 	public function test_an_alert_can_lead_with_a_title(): void {
 		$html = Components::render( 'alert', [ 'title' => 'Test <mode>.', 'message' => 'Nothing was charged.', 'type' => 'warning' ] );
 
