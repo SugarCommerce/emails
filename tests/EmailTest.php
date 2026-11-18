@@ -1064,6 +1064,23 @@ final class EmailTest extends TestCase {
 	}
 
 	/**
+	 * A plugin of the family prefixes with a namespace that also starts
+	 * "SugarCommerce", and its build is still its own.
+	 */
+	public function test_a_family_plugin_build_is_not_taken_for_the_library(): void {
+		$playground = Runtime::prefix_for( 'SugarCommerce\\Playground\\Vendor\\SugarCommerce\\Emails\\Utils' );
+
+		$this->assertSame( 'sugarcommerce-playground-vendor-emails', $playground );
+		$this->assertNotSame(
+			$playground,
+			Runtime::prefix_for( 'SugarCommerce\\Kitchen\\Vendor\\SugarCommerce\\Emails\\Utils' ),
+			'Two plugins of the family share a name.'
+		);
+		$this->assertSame( 'sugarcart-emails', Runtime::prefix_for( 'SugarCart\\Vendor\\SugarCommerce\\Emails\\Utils' ), 'A plugin outside the family keeps its name.' );
+		$this->assertSame( 'emails', Runtime::prefix_for( '\\SugarCommerce\\Emails\\Utils\\' ) );
+	}
+
+	/**
 	 * The template filters are this copy's too: they used to be
 	 * `register_emails_template` for every plugin bundling the library.
 	 */

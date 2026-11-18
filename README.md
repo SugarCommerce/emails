@@ -199,6 +199,9 @@ configuration key, option key and `{prefix}_` hook of the Mailer keeps its name.
 | `Utils\Assets::style()` / `::script()` / `::resolve()` / `::url_of()`, wp-composer-assets | removed: `SugarCommerce\Plugin\Assets::enqueue_style( $handle, __FILE__, $file )` / `::enqueue_script()` / `::resolve()` / `::path_to_url()` (sugarcommerce/plugin, the one home for asset URLs) |
 | `activity_log`, `event_details`, `info_box`, `product_list`, `progress_bar`, `raw_html`, `reward_balance`, `shipping_tracker`, `stats_grid`, `subscription_status`, `testimonial` | removed: nothing used them. `info_box` is `alert` with a `title`; `raw_html` is a tag of type `html` |
 
+A Strauss prefix that itself starts `SugarCommerce\` keeps all its segments -- `SugarCommerce\Playground\Vendor\` gives
+`sugarcommerce_playground_vendor_emails_template` -- so a plugin of the family is never taken for an unprefixed copy.
+
 From the retired SaaS packages: `mailer`'s transports (`Transport`, `SendResult` as `Result`, `Postmark`, `Resend`,
 `Memory`, the staging redirect, the plain-text part) and `email-templates`' preheader, `lang`/`dir`, reported unresolved
 tags, pre-formatted amounts and the notice's bold title. Not carried over: the SES, SMTP, Cloudflare and log
