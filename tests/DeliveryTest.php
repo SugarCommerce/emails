@@ -323,8 +323,8 @@ final class DeliveryTest extends TestCase {
 		$this->assertSame( 'https://api.postmarkapp.com/email', $request['url'] );
 		$this->assertSame( 'pm-token', $request['args']['headers']['X-Postmark-Server-Token'] );
 		$this->assertSame( 0, $request['args']['redirection'] );
-		$this->assertSame( 'Shop <shop@example.test>', $body['From'] );
-		$this->assertSame( 'Help <help@example.test>', $body['ReplyTo'] );
+		$this->assertSame( '"Shop" <shop@example.test>', $body['From'] );
+		$this->assertSame( '"Help" <help@example.test>', $body['ReplyTo'] );
 		$this->assertSame( 'audit@example.test', $body['Bcc'] );
 		$this->assertSame( 'Hi', $body['TextBody'] );
 		$this->assertSame( [ [ 'Name' => 'X-Order', 'Value' => '42' ] ], $body['Headers'] );
@@ -344,9 +344,90 @@ final class DeliveryTest extends TestCase {
 
 		$this->assertSame( 'rs-1', $result->message_id );
 		$this->assertSame( 'Bearer re_key', $request['args']['headers']['Authorization'] );
-		$this->assertSame( 'Shop <shop@example.test>', $body['from'] );
+		$this->assertSame( '"Shop" <shop@example.test>', $body['from'] );
 		$this->assertSame( [ 'jane@example.test' ], $body['to'] );
 		$this->assertArrayNotHasKey( 'cc', $body );
+	}
+
+	/**
+	 * A sender with a comma in its name stays one sender: unquoted, Postmark
+	 * and Resend read `Acme, Inc. <shop@…>` as two addresses and refuse it.
+	 */
+	public function test_an_api_is_given_a_quoted_name(): void {
+		$GLOBALS['re_respond'] = [ 200, '{"MessageID":"pm-1","ErrorCode":0}' ];
+
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>', from_email: 'shop@example.test', from_name: 'Acme, Inc.' ), new Postmark( 'pm-token' ) );
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>' ), new Postmark( 'pm-token', 'Acme, Inc. <shop@example.test>' ) );
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>' ), new Resend( 're_key', 'Acme, Inc. <shop@example.test>' ) );
+
+		$this->assertSame( '"Acme, Inc." <shop@example.test>', json_decode( $GLOBALS['re_http'][0]['args']['body'], true )['From'] );
+		$this->assertSame( '"Acme, Inc." <shop@example.test>', json_decode( $GLOBALS['re_http'][1]['args']['body'], true )['From'], 'The transport\'s own sender, as typed into a setting.' );
+		$this->assertSame( '"Acme, Inc." <shop@example.test>', json_decode( $GLOBALS['re_http'][2]['args']['body'], true )['from'] );
+	}
+
+	/**
+	 * Postmark sends Metadata and Tag back with a bounce or a complaint,
+	 * which is how one is tied to an order. Ten fields, twenty and eighty
+	 * characters at most: cut, not refused.
+	 */
+	public function test_postmark_is_given_the_metadata_and_the_tag(): void {
+		$GLOBALS['re_respond'] = [ 200, '{"MessageID":"pm-1","ErrorCode":0}' ];
+
+		$metadata = [ 'order_id' => '1234', 'long' => str_repeat( 'v', 100 ) ];
+
+		for ( $i = 0; $i < 12; $i++ ) {
+			$metadata[ 'k' . $i ] = (string) $i;
+		}
+
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>', metadata: $metadata, tag: 'receipt' ), new Postmark( 'pm-token', 'shop@example.test' ) );
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>' ), new Postmark( 'pm-token', 'shop@example.test' ) );
+
+		$body = json_decode( $GLOBALS['re_http'][0]['args']['body'], true );
+		$bare = json_decode( $GLOBALS['re_http'][1]['args']['body'], true );
+
+		$this->assertSame( 'receipt', $body['Tag'] );
+		$this->assertSame( '1234', $body['Metadata']['order_id'] );
+		$this->assertSame( 80, strlen( $body['Metadata']['long'] ) );
+		$this->assertCount( 10, $body['Metadata'] );
+		$this->assertArrayNotHasKey( 'Tag', $bare );
+		$this->assertArrayNotHasKey( 'Metadata', $bare );
+	}
+
+	/**
+	 * Resend takes them as tags, in the only characters it allows.
+	 */
+	public function test_resend_is_given_the_metadata_and_the_tag_as_tags(): void {
+		$GLOBALS['re_respond'] = [ 200, '{"id":"rs-1"}' ];
+
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>', metadata: [ 'order_id' => '1234', 'note' => 'a b.c' ], tag: 'receipt' ), new Resend( 're_key', 'shop@example.test' ) );
+		Delivery::send( new Message( [ 'jane@example.test' ], 'Receipt', '<p>Hi</p>' ), new Resend( 're_key', 'shop@example.test' ) );
+
+		$this->assertSame(
+			[
+				[ 'name' => 'category', 'value' => 'receipt' ],
+				[ 'name' => 'order_id', 'value' => '1234' ],
+				[ 'name' => 'note', 'value' => 'a_b_c' ],
+			],
+			json_decode( $GLOBALS['re_http'][0]['args']['body'], true )['tags']
+		);
+		$this->assertArrayNotHasKey( 'tags', json_decode( $GLOBALS['re_http'][1]['args']['body'], true ) );
+	}
+
+	/**
+	 * Metadata survives a redirect to a staging inbox, so a test of a
+	 * bounce webhook on staging is a real one.
+	 */
+	public function test_metadata_survives_a_redirect(): void {
+		$memory = new Memory();
+		Delivery::redirect( 'Staging Inbox <dev@example.test>' );
+
+		$this->email()->meta( 'order_id', 7 )->tag( 'receipt' )->via( $memory )->send();
+
+		Delivery::redirect( '' );
+
+		$this->assertSame( [ 'dev@example.test' ], $memory->last()->to, 'The redirect may be written with a name.' );
+		$this->assertSame( [ 'order_id' => '7' ], $memory->last()->metadata );
+		$this->assertSame( 'receipt', $memory->last()->tag );
 	}
 
 	/**

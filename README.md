@@ -91,6 +91,27 @@ Email::make()
 `->text()` replaces the plain-text part, which is otherwise worked out from the HTML with every link kept. The
 document says the site's language and direction (`lang`, `dir="rtl"`) whatever template drew it.
 
+An address may be written the way people write them -- `->to( 'Jane Doe <jane@example.com>' )`,
+`->from( '"Acme, Inc." <shop@example.com>' )` -- and the address is taken out of the brackets (handed whole to
+`sanitize_email()` it became `Janejane@example.com`). A name with a comma in it is quoted for an API and handed to
+`wp_mail()` in the form it can read. A placeholder the template asks for that nothing fills goes, but braces in what
+a customer typed -- `{VIP}` in a name, a note, a licence key -- are sent as typed.
+
+```php
+use SugarCommerce\Emails\Address;
+
+Address::parse( '"Acme, Inc." <shop@example.com>' );           // ->email, ->name
+Address::list( '"Accounts, Ltd" <a@example.com>, b@example.com' ); // two, the quoted comma kept
+Address::email_of( 'Jane <jane@example.com>' );                // 'jane@example.com'; '' when none
+( new Address( 'shop@example.com', 'Acme, Inc.' ) )->header(); // "Acme, Inc." <shop@example.com>
+```
+
+`->meta( 'order_id', $order->id )` and `->tag( 'receipt' )` ride with the email to the provider, which sends them back
+with a bounce, a complaint or a delivery webhook -- so one is tied to an order with no lookup by address. Postmark gets
+`Metadata` and `Tag` (ten fields, twenty and eighty characters, cut there), Resend gets `tags` (the tag as `category`,
+anything but letters, numbers, `_` and `-` written as `_`); `wp_mail()` has nowhere to put them. `tag()` is the
+provider's category, not `tags()`, which names the groups of merge tags.
+
 ## Templates and theme overrides
 
 Seven designs ship: `default`, `soft`, `mono`, `notification`, `plain`, `dark`, `invoice`. A theme overrides one with a
@@ -211,6 +232,9 @@ configuration key, option key and `{prefix}_` hook of the Mailer keeps its name.
 | CSS classes `register-emails-*` | `sugarcommerce-emails-*` |
 | `Sender::headers()`, `wp_mail()` in Send a test | unchanged, and the test now goes through the mailer's transport |
 | `Email` headers kept as lines | kept apart (`Email::message()`); a second `from()` replaces the first |
+| `->to( 'Jane <jane@x.com>' )` sent to `Janejane@x.com` | sent to `jane@x.com`; `from()`/`reply_to()` keep the name too |
+| `Message::address()` writing `Name <address>` | `"Name" <address>` (quoted, escaped); `Message::lines()` writes the form `wp_mail()` reads |
+| every `{word}` in the finished email removed | only the template's own unfilled placeholders; braces in values are sent |
 | `ArrayPress\FormatUtils\Text::humanize()` labels | `SugarCommerce\Text\Text::humanize()` |
 | `order_items` via wp-money's `format_money()` | `format` callable, `sugarcommerce/money`, or strings; translated words |
 | `ArrayPress\RegisterEmails\Utils\Color::hex( $value, $fallback )` | `SugarCommerce\Text\Display\Color::hex( $value, $fallback )` (sugarcommerce/text, the one colour helper); it now also reads a colour without its `#` |
@@ -224,7 +248,8 @@ A Strauss prefix that itself starts `SugarCommerce\` keeps all its segments -- `
 `sugarcommerce_playground_vendor_emails_template` -- so a plugin of the family is never taken for an unprefixed copy.
 
 From the retired SaaS packages: `mailer`'s transports (`Transport`, `SendResult` as `Result`, `Postmark`, `Resend`,
-`Memory`, the staging redirect, the plain-text part) and `email-templates`' preheader, `lang`/`dir`, reported unresolved
+`Memory`, the staging redirect, the plain-text part), its `Address` (`parse()`, `from()`, quoted `header()`, plus
+`list()` and `email_of()`) and `Message::meta()`/`tag()` (as `Email::meta()`/`tag()`, `Message::$metadata`/`$tag`) and `email-templates`' preheader, `lang`/`dir`, reported unresolved
 tags, pre-formatted amounts and the notice's bold title. Not carried over: the SES, SMTP, Cloudflare and log
 transports and the log viewer (an SMTP plugin already sits behind `wp_mail()`; any other provider is one small
 `Transport`), the MIME builder (PHPMailer's job here), and email-templates' own renderer, layouts, palettes and

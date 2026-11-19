@@ -102,7 +102,8 @@ final class Delivery {
 		 *
 		 * @param string $address The inbox, or empty.
 		 */
-		$address = sanitize_email( (string) apply_filters( Runtime::hook( 'redirect' ), self::$redirect ) );
+		$given   = (string) apply_filters( Runtime::hook( 'redirect' ), self::$redirect );
+		$address = sanitize_email( Address::try_parse( $given )?->email ?? $given );
 
 		return is_email( $address ) ? $address : '';
 	}

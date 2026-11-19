@@ -468,6 +468,24 @@ final class MailerTest extends TestCase {
 
 		$mailer->send( 'admin_sale', 5 );
 		$this->assertSame( [ 'one@example.test', 'two@example.test' ], $this->last_mail()['to'] );
+
+		// Each written as people write them, a comma inside quotes and all.
+		$this->saved( [ 'email_admin_sale' => [ 'recipient' => '"Accounts, Ltd" <accounts@example.test>, Boss <boss@example.test>' ] ] );
+		$this->assertSame( [ 'accounts@example.test', 'boss@example.test' ], $mailer->sender()->recipient( 'admin_sale', $this->orders[5] ) );
+	}
+
+	public function test_a_from_address_typed_with_a_name_is_the_address(): void {
+		$mailer = $this->mailer( null, [ 'keys' => [ 'reply_to' => 'support' ] ] );
+
+		$this->saved(
+			[
+				'email_from_address' => 'The Shop <hello@example.test>',
+				'support'            => 'Help <help@example.test>',
+			]
+		);
+
+		$this->assertSame( 'hello@example.test', $mailer->sender()->identity()['address'] );
+		$this->assertSame( 'help@example.test', $mailer->sender()->identity()['reply_to'] );
 	}
 
 	public function test_a_recipient_worked_out_in_code_is_asked(): void {

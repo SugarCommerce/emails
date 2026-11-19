@@ -12,6 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Transports;
 
+use SugarCommerce\Emails\Address;
 use SugarCommerce\Emails\Result;
 
 /**
@@ -111,6 +112,21 @@ trait Api {
 		}
 
 		return implode( '; ', array_filter( array_map( [ self::class, 'words' ], array_values( $value ) ), 'strlen' ) );
+	}
+
+	/**
+	 * The sender a transport was set up with, as the API needs it written.
+	 *
+	 * `Shop, Inc. <shop@example.com>` typed into a setting is quoted, so the
+	 * comma does not make it two senders. What does not parse goes as it
+	 * is, for the API to say what is wrong with it.
+	 *
+	 * @param string $from As given.
+	 *
+	 * @return string
+	 */
+	private static function sender( string $from ): string {
+		return Address::try_parse( $from )?->header() ?? $from;
 	}
 
 	/**

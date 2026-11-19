@@ -155,6 +155,20 @@ final class Email {
 	private array $attachments = [];
 
 	/**
+	 * For the provider to send back with a bounce or a complaint.
+	 *
+	 * @var array<string, string>
+	 */
+	private array $metadata = [];
+
+	/**
+	 * What kind of email it is, for the provider's reports.
+	 *
+	 * @var string
+	 */
+	private string $tag = '';
+
+	/**
 	 * The tag groups that apply.
 	 *
 	 * @var string[]
@@ -215,13 +229,18 @@ final class Email {
 	/**
 	 * Who it goes to.
 	 *
+	 * `jane@example.com` or `Jane Doe <jane@example.com>`: the address is
+	 * taken out of the brackets. Handed whole to sanitize_email(), that
+	 * second one became `Janejane@example.com` -- a stranger's inbox, or a
+	 * bounce, and nobody told.
+	 *
 	 * @param string|string[] $to One address or several.
 	 *
 	 * @return self
 	 */
 	public function to( string|array $to ): self {
 		foreach ( (array) $to as $address ) {
-			$address = sanitize_email( (string) $address );
+			$address = self::email_of( (string) $address );
 
 			if ( '' !== $address ) {
 				$this->to[] = $address;
@@ -347,17 +366,14 @@ final class Email {
 	/**
 	 * Who it comes from.
 	 *
-	 * @param string $email The address.
-	 * @param string $name  The name.
+	 * @param string $email The address, or `Name <address>`.
+	 * @param string $name  The name. Empty to keep the one written with
+	 *                      the address, if any.
 	 *
 	 * @return self
 	 */
 	public function from( string $email, string $name = '' ): self {
-		$email = sanitize_email( $email );
-
-		if ( '' !== $email ) {
-			$this->from = [ $email, self::one_line( $name ) ];
-		}
+		$this->from = self::named( $email, $name ) ?? $this->from;
 
 		return $this;
 	}
@@ -365,17 +381,14 @@ final class Email {
 	/**
 	 * Where a reply goes.
 	 *
-	 * @param string $email The address.
-	 * @param string $name  The name.
+	 * @param string $email The address, or `Name <address>`.
+	 * @param string $name  The name. Empty to keep the one written with
+	 *                      the address, if any.
 	 *
 	 * @return self
 	 */
 	public function reply_to( string $email, string $name = '' ): self {
-		$email = sanitize_email( $email );
-
-		if ( '' !== $email ) {
-			$this->reply = [ $email, self::one_line( $name ) ];
-		}
+		$this->reply = self::named( $email, $name ) ?? $this->reply;
 
 		return $this;
 	}
@@ -383,12 +396,12 @@ final class Email {
 	/**
 	 * Who else gets it.
 	 *
-	 * @param string $email The address.
+	 * @param string $email The address, or `Name <address>`.
 	 *
 	 * @return self
 	 */
 	public function cc( string $email ): self {
-		$email = sanitize_email( $email );
+		$email = self::email_of( $email );
 
 		if ( '' !== $email ) {
 			$this->cc[] = $email;
@@ -400,16 +413,67 @@ final class Email {
 	/**
 	 * Who else gets it, quietly.
 	 *
-	 * @param string $email The address.
+	 * @param string $email The address, or `Name <address>`.
 	 *
 	 * @return self
 	 */
 	public function bcc( string $email ): self {
-		$email = sanitize_email( $email );
+		$email = self::email_of( $email );
 
 		if ( '' !== $email ) {
 			$this->bcc[] = $email;
 		}
+
+		return $this;
+	}
+
+	/**
+	 * Something for the provider to send back with a bounce or a complaint.
+	 *
+	 * Put the order's id here and a bounce webhook says which order it was
+	 * about, with no lookup by address. Postmark sends it as Metadata,
+	 * Resend as tags; wp_mail() has nowhere to put it and leaves it off.
+	 *
+	 *     ->meta( 'order_id', $order->id )
+	 *
+	 * @param string     $key   A short name: letters, numbers, `_` and `-`,
+	 *                          up to 20 (Postmark's longest).
+	 * @param string|int $value Its value, on one line. Empty takes it off.
+	 *
+	 * @return self
+	 */
+	public function meta( string $key, string|int $value ): self {
+		$key = self::one_line( $key );
+
+		if ( 1 !== preg_match( '/^[A-Za-z0-9_-]{1,20}$/', $key ) ) {
+			return $this;
+		}
+
+		$value = self::one_line( (string) $value );
+
+		if ( '' === $value ) {
+			unset( $this->metadata[ $key ] );
+		} else {
+			$this->metadata[ $key ] = $value;
+		}
+
+		return $this;
+	}
+
+	/**
+	 * What kind of email it is, for the provider's reports: `receipt`,
+	 * `password-reset`.
+	 *
+	 * One word for the provider's dashboard and its bounce webhooks --
+	 * Postmark's Tag, a `category` tag at Resend. Not tags(), which names
+	 * the groups of merge tags the body is filled in from.
+	 *
+	 * @param string $tag The kind. Empty for none.
+	 *
+	 * @return self
+	 */
+	public function tag( string $tag ): self {
+		$this->tag = self::one_line( $tag );
 
 		return $this;
 	}
@@ -566,6 +630,8 @@ final class Email {
 			bcc: $this->bcc,
 			headers: $this->headers,
 			attachments: $this->attachments,
+			metadata: $this->metadata,
+			tag: $this->tag,
 		);
 	}
 
@@ -651,12 +717,52 @@ final class Email {
 				: esc_html( (string) $value );
 		}
 
-		$shell = self::document( strtr( $shell, $filled ), $preheader );
+		// Anything the template asks for that nobody filled in goes, or it
+		// shows up as `{colour_primary}` in the middle of the email. Read
+		// out of the template alone and taken out in the same single pass
+		// that puts the values in: a sweep of the finished email afterwards
+		// also took `{these}` out of what a customer typed -- a name, a
+		// note, a licence key -- and what a value says is never a tag.
+		if ( preg_match_all( '/\{[a-z0-9_]+\}/i', $shell, $asked ) ) {
+			foreach ( $asked[0] as $placeholder ) {
+				$filled[ $placeholder ] ??= '';
+			}
+		}
 
-		// Anything the template asked for and nobody filled in. A template
-		// placeholder left in the markup shows up as `{colour_primary}` in
-		// the middle of the email.
-		return (string) preg_replace( '/\{[a-z0-9_]+\}/i', '', $shell );
+		return self::document( strtr( $shell, $filled ), $preheader );
+	}
+
+	/**
+	 * An address and its name, from what was given.
+	 *
+	 * @param string $email The address, or `Name <address>`.
+	 * @param string $name  The name, which wins over one written with the
+	 *                      address.
+	 *
+	 * @return array{0: string, 1: string}|null Null when there is no address.
+	 */
+	private static function named( string $email, string $name ): ?array {
+		$address = Address::try_parse( $email );
+		$email   = sanitize_email( null === $address ? $email : $address->email );
+
+		if ( '' === $email ) {
+			return null;
+		}
+
+		return [ $email, self::one_line( '' !== trim( $name ) || null === $address ? $name : $address->name ) ];
+	}
+
+	/**
+	 * The address part of what was given, made safe, or ''.
+	 *
+	 * @param string $value An address, or `Name <address>`.
+	 *
+	 * @return string
+	 */
+	private static function email_of( string $value ): string {
+		$address = Address::try_parse( $value );
+
+		return sanitize_email( null === $address ? $value : $address->email );
 	}
 
 	/**

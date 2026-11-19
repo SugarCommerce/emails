@@ -50,6 +50,13 @@ final class Message {
 	 * @param string[]              $bcc           Who else gets it, quietly.
 	 * @param array<string, string> $headers       Headers of the sender's own, by name.
 	 * @param string[]              $attachments   Paths of files to attach.
+	 * @param array<string, string> $metadata      For the provider to send back
+	 *                                             with a bounce or a complaint:
+	 *                                             `order_id => 1234`. Postmark's
+	 *                                             Metadata, Resend's tags.
+	 * @param string                $tag           What kind of email it is, for
+	 *                                             the provider's reports:
+	 *                                             `receipt`. Postmark's Tag.
 	 */
 	public function __construct(
 		public readonly array $to,
@@ -64,6 +71,8 @@ final class Message {
 		public readonly array $bcc = [],
 		public readonly array $headers = [],
 		public readonly array $attachments = [],
+		public readonly array $metadata = [],
+		public readonly string $tag = '',
 	) {
 		$this->text = '' !== $text ? $text : self::text_of( $html );
 	}
@@ -98,12 +107,14 @@ final class Message {
 	public function lines( string $charset = 'UTF-8' ): array {
 		$lines = [ 'Content-Type: text/html; charset=' . $charset ];
 
+		// Not quoted: wp_mail() reads the name off these lines itself, and
+		// PHPMailer quotes and encodes it. See Address::for_wp_mail().
 		if ( '' !== $this->from_email ) {
-			$lines[] = 'From: ' . self::address( $this->from_email, $this->from_name );
+			$lines[] = 'From: ' . Address::format_for_wp_mail( $this->from_email, $this->from_name, false );
 		}
 
 		if ( '' !== $this->reply_to ) {
-			$lines[] = 'Reply-To: ' . self::address( $this->reply_to, $this->reply_to_name );
+			$lines[] = 'Reply-To: ' . Address::format_for_wp_mail( $this->reply_to, $this->reply_to_name );
 		}
 
 		foreach ( $this->cc as $address ) {
@@ -122,8 +133,12 @@ final class Message {
 	}
 
 	/**
-	 * Somebody's address as a header writes it: `Name <address>`, or the
+	 * Somebody's address as a header writes it: `"Name" <address>`, or the
 	 * address alone.
+	 *
+	 * The name is quoted, so `Acme, Inc.` stays one sender for an API that
+	 * reads the header -- unquoted, Postmark and Resend read a comma as the
+	 * start of a second address and refuse the email.
 	 *
 	 * @param string $email The address.
 	 * @param string $name  Their name.
@@ -131,7 +146,7 @@ final class Message {
 	 * @return string
 	 */
 	public static function address( string $email, string $name = '' ): string {
-		return '' === $name ? $email : sprintf( '%s <%s>', $name, $email );
+		return Address::format( $email, $name );
 	}
 
 	/**

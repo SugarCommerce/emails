@@ -355,10 +355,24 @@ final class Look {
 			return (string) call_user_func( $fill, (string) $chosen['footer'] );
 		}
 
-		return str_replace(
-			[ '{year}', '{site_name}' ],
-			[ (string) current_time( 'Y' ), (string) get_bloginfo( 'name' ) ],
-			(string) $chosen['footer']
+		// One pass, so a site name with `{braces}` in it goes in as it is,
+		// and a tag the footer names that nothing fills in goes.
+		$footer = (string) $chosen['footer'];
+		$fill   = [];
+
+		if ( preg_match_all( '/\{[a-z0-9_]+\}/i', $footer, $asked ) ) {
+			$fill = array_fill_keys( $asked[0], '' );
+		}
+
+		return strtr(
+			$footer,
+			array_merge(
+				$fill,
+				[
+					'{year}'      => (string) current_time( 'Y' ),
+					'{site_name}' => (string) get_bloginfo( 'name' ),
+				]
+			)
 		);
 	}
 

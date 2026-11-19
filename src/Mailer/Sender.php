@@ -12,6 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Mailer;
 
+use SugarCommerce\Emails\Address;
 use SugarCommerce\Emails\Email;
 use SugarCommerce\Emails\Emails;
 use SugarCommerce\Emails\Mailer;
@@ -329,9 +330,7 @@ final class Sender {
 		$headers = [];
 
 		if ( '' !== $sender['address'] ) {
-			$headers[] = '' === $sender['name']
-				? 'From: ' . $sender['address']
-				: sprintf( 'From: %1$s <%2$s>', $sender['name'], $sender['address'] );
+			$headers[] = 'From: ' . Address::format_for_wp_mail( $sender['address'], $sender['name'], false );
 		}
 
 		if ( '' !== $sender['reply_to'] ) {
@@ -361,8 +360,8 @@ final class Sender {
 	public function identity(): array {
 		$store   = $this->mailer->store();
 		$name    = trim( sanitize_text_field( (string) $store->get( $store->key( 'from_name' ), '' ) ) );
-		$address = sanitize_email( (string) $store->get( $store->key( 'from_address' ), '' ) );
-		$reply   = sanitize_email( (string) $store->get( $store->key( 'reply_to' ), '' ) );
+		$address = self::email_of( (string) $store->get( $store->key( 'from_address' ), '' ) );
+		$reply   = self::email_of( (string) $store->get( $store->key( 'reply_to' ), '' ) );
 
 		if ( '' === $name ) {
 			$name = wp_specialchars_decode( (string) get_bloginfo( 'name' ), ENT_QUOTES );
@@ -392,9 +391,21 @@ final class Sender {
 
 		return [
 			'name'     => trim( sanitize_text_field( (string) ( $filtered['name'] ?? $sender['name'] ) ) ),
-			'address'  => sanitize_email( (string) ( $filtered['address'] ?? $sender['address'] ) ),
-			'reply_to' => sanitize_email( (string) ( $filtered['reply_to'] ?? '' ) ),
+			'address'  => self::email_of( (string) ( $filtered['address'] ?? $sender['address'] ) ),
+			'reply_to' => self::email_of( (string) ( $filtered['reply_to'] ?? '' ) ),
 		];
+	}
+
+	/**
+	 * The address in a setting, made safe: `Name <address>` gives the
+	 * address, where sanitize_email() alone made `Nameaddress`.
+	 *
+	 * @param string $value What was saved.
+	 *
+	 * @return string The address, or ''.
+	 */
+	private static function email_of( string $value ): string {
+		return sanitize_email( Address::try_parse( $value )?->email ?? $value );
 	}
 
 	/**
@@ -451,8 +462,9 @@ final class Sender {
 		}
 
 		// Several addresses, separated by commas, which is what the box
-		// says beside it.
-		$to = array_filter( array_map( 'sanitize_email', explode( ',', (string) ( $saved['recipient'] ?? '' ) ) ) );
+		// says beside it -- and each may be written `Name <address>`, whose
+		// name may have a comma of its own inside quotes.
+		$to = array_filter( array_map( static fn( Address $address ): string => sanitize_email( $address->email ), Address::list( (string) ( $saved['recipient'] ?? '' ) ) ) );
 
 		if ( [] !== $to ) {
 			$stored['to'] = array_values( $to );

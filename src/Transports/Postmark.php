@@ -25,6 +25,12 @@ use SugarCommerce\Emails\Transport;
  *
  * A message with no From address is sent from `from`, which must be a
  * sender signature confirmed on the Postmark account.
+ *
+ * A message's metadata goes as Postmark's `Metadata` and its tag as `Tag`,
+ * and Postmark sends both back with a bounce, a spam complaint or a
+ * delivery webhook -- which is how one is tied back to an order. Postmark
+ * keeps ten fields, a name of up to twenty characters and a value of up to
+ * eighty; anything longer is cut there rather than refused.
  */
 final class Postmark implements Transport {
 
@@ -36,6 +42,13 @@ final class Postmark implements Transport {
 	 * @var string
 	 */
 	private const ENDPOINT = 'https://api.postmarkapp.com/email';
+
+	/**
+	 * The most metadata fields Postmark keeps.
+	 *
+	 * @var int
+	 */
+	private const METADATA_FIELDS = 10;
 
 	/**
 	 * Construct.
@@ -76,7 +89,7 @@ final class Postmark implements Transport {
 	 */
 	public function send( Message $message ): Result {
 		$payload = [
-			'From'          => '' !== $message->from_email ? Message::address( $message->from_email, $message->from_name ) : $this->from,
+			'From'          => '' !== $message->from_email ? Message::address( $message->from_email, $message->from_name ) : self::sender( $this->from ),
 			'To'            => implode( ', ', $message->to ),
 			'Subject'       => $message->subject,
 			'HtmlBody'      => $message->html,
@@ -94,6 +107,14 @@ final class Postmark implements Transport {
 
 		if ( '' !== $message->reply_to ) {
 			$payload['ReplyTo'] = Message::address( $message->reply_to, $message->reply_to_name );
+		}
+
+		if ( '' !== $message->tag ) {
+			$payload['Tag'] = mb_substr( $message->tag, 0, 1000 );
+		}
+
+		foreach ( array_slice( $message->metadata, 0, self::METADATA_FIELDS, true ) as $key => $value ) {
+			$payload['Metadata'][ substr( (string) $key, 0, 20 ) ] = mb_substr( (string) $value, 0, 80 );
 		}
 
 		foreach ( $message->headers as $name => $value ) {

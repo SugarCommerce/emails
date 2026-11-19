@@ -523,6 +523,72 @@ final class EmailTest extends TestCase {
 	}
 
 	/**
+	 * `Name <address>` is the address, not `Nameaddress`.
+	 *
+	 * sanitize_email() on the whole string strips the brackets and the
+	 * space and keeps the rest, which is somebody else's inbox.
+	 */
+	public function test_a_name_and_an_address_is_read_as_the_address(): void {
+		$message = Email::make()
+			->to( 'Jane Doe <jane@example.test>' )
+			->cc( '"Audit, Ltd" <audit@example.test>' )
+			->bcc( 'Boss <boss@example.test>' )
+			->from( '"Acme, Inc." <shop@example.test>' )
+			->reply_to( 'Help Desk <help@example.test>' )
+			->content( 'Thanks.' )
+			->message();
+
+		$this->assertSame( [ 'jane@example.test' ], $message->to );
+		$this->assertSame( [ 'audit@example.test' ], $message->cc );
+		$this->assertSame( [ 'boss@example.test' ], $message->bcc );
+		$this->assertSame( [ 'shop@example.test', 'Acme, Inc.' ], [ $message->from_email, $message->from_name ] );
+		$this->assertSame( [ 'help@example.test', 'Help Desk' ], [ $message->reply_to, $message->reply_to_name ] );
+
+		$named = Email::make()->from( 'Shop <shop@example.test>', 'The Shop' )->reply_to( 'not an address' )->message();
+
+		$this->assertSame( 'The Shop', $named->from_name, 'A name given beside it wins.' );
+		$this->assertSame( '', $named->reply_to );
+	}
+
+	/**
+	 * wp_mail() is handed names it can read: From keeps its comma, a
+	 * Reply-To loses it, since wp_mail() splits that line at every comma.
+	 */
+	public function test_wp_mail_is_handed_names_it_can_read(): void {
+		Email::make()
+			->to( 'jane@example.test' )
+			->from( 'shop@example.test', 'Acme, Inc.' )
+			->reply_to( 'help@example.test', 'Help, Desk' )
+			->content( 'Thanks.' )
+			->send();
+
+		$headers = $GLOBALS['re_mail'][0]['headers'];
+
+		$this->assertContains( 'From: Acme, Inc. <shop@example.test>', $headers );
+		$this->assertContains( 'Reply-To: Help Desk <help@example.test>', $headers );
+	}
+
+	/**
+	 * What the provider sends back with a bounce, and the kind of email.
+	 */
+	public function test_metadata_and_a_tag_ride_on_the_message(): void {
+		$message = Email::make()
+			->to( 'jane@example.test' )
+			->meta( 'order_id', 1234 )
+			->meta( 'customer', 'c_9' )
+			->meta( 'customer', '' )
+			->meta( 'not a key!', 'x' )
+			->meta( 'note', "two\nlines" )
+			->tag( "receipt\n" )
+			->content( 'Thanks.' )
+			->message();
+
+		$this->assertSame( [ 'order_id' => '1234', 'note' => 'two lines' ], $message->metadata );
+		$this->assertSame( 'receipt', $message->tag );
+		$this->assertSame( [], Email::make()->to( 'jane@example.test' )->message()->metadata );
+	}
+
+	/**
 	 * An address that is not one is left out rather than mangled in.
 	 */
 	public function test_an_address_that_is_not_one_is_left_out(): void {
@@ -574,6 +640,57 @@ final class EmailTest extends TestCase {
 
 		$this->assertStringContainsString( '<p>Thanks.</p>', $html );
 		$this->assertStringNotContainsString( '{something_nobody_fills}', $html );
+	}
+
+	/**
+	 * What a customer typed goes out as typed, braces and all.
+	 *
+	 * The unfilled-placeholder sweep used to run over the finished email,
+	 * values in, so `{VIP}` in a name, a note or a licence key was cut out
+	 * of what was sent. Only the template's own placeholders may go.
+	 */
+	public function test_braces_in_what_a_customer_typed_are_sent_as_typed(): void {
+		$this->tags();
+		$this->with_template( '<div>{title}|{content}|{something_nobody_fills}</div>' );
+
+		$order = (object) [ 'name' => 'Jane {VIP} Doe', 'total' => 10 ];
+		$email = Email::make()
+			->to( 'jane@example.test' )
+			->subject( 'For {customer_name}' )
+			->preheader( 'Thanks, {customer_name}' )
+			->content( '<p>Hello {customer_name}{naem}, licence {ABCD-1234}.</p>' )
+			->tags( 'shop' )
+			->about( $order )
+			->context( [ 'title' => 'Order {A1B2}' ] );
+
+		$message = $email->message();
+
+		$this->assertStringContainsString( '<p>Hello Jane {VIP} Doe, licence {ABCD-1234}.</p>', $message->html, 'A tag the body was written with that nobody knows still goes.' );
+		$this->assertStringContainsString( 'Order {A1B2}|', $message->html );
+		$this->assertStringContainsString( 'Thanks, Jane {VIP} Doe', $message->html );
+		$this->assertStringNotContainsString( '{something_nobody_fills}', $message->html );
+		$this->assertStringContainsString( 'Jane {VIP} Doe', $message->text );
+		$this->assertSame( 'For Jane {VIP} Doe', $message->subject );
+		$this->assertSame( [ 'naem' ], $email->unknown() );
+	}
+
+	/**
+	 * A site name with braces in it goes into the footer as it is; a tag
+	 * the footer names that nothing fills goes.
+	 */
+	public function test_the_typed_footer_keeps_a_site_name_with_braces(): void {
+		$GLOBALS['re_site_name'] = 'Shop {Beta}';
+
+		try {
+			$look   = new \ReflectionMethod( \SugarCommerce\Emails\Mailer\Look::class, 'footer' );
+			$mail   = \SugarCommerce\Emails\Mailer::register( 'braces', [ 'contexts' => [ 'order' => [] ] ] );
+			$footer = $look->invoke( $mail->look(), [ 'footer_enabled' => true, 'footer' => '© {year} {site_name} {nobody}' ] );
+		} finally {
+			unset( $GLOBALS['re_site_name'] );
+		}
+
+		$this->assertStringContainsString( '{Beta}', $footer );
+		$this->assertStringNotContainsString( '{nobody}', $footer );
 	}
 
 	/**

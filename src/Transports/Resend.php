@@ -21,6 +21,11 @@ use SugarCommerce\Emails\Transport;
  *
  * A message with no From address is sent from `from`, which must be on a
  * domain verified on the Resend account.
+ *
+ * A message's metadata and its tag go as Resend's `tags` -- the tag as one
+ * named `category` -- which Resend sends back with its webhooks. Resend
+ * takes only letters, numbers, `_` and `-` in a tag, so anything else is
+ * written as `_` rather than having the email refused.
  */
 final class Resend implements Transport {
 
@@ -68,7 +73,7 @@ final class Resend implements Transport {
 	 */
 	public function send( Message $message ): Result {
 		$payload = [
-			'from'    => '' !== $message->from_email ? Message::address( $message->from_email, $message->from_name ) : $this->from,
+			'from'    => '' !== $message->from_email ? Message::address( $message->from_email, $message->from_name ) : self::sender( $this->from ),
 			'to'      => $message->to,
 			'subject' => $message->subject,
 			'html'    => $message->html,
@@ -91,6 +96,19 @@ final class Resend implements Transport {
 			$payload['headers'] = $message->headers;
 		}
 
+		$tags = $message->metadata;
+
+		if ( '' !== $message->tag ) {
+			$tags = [ 'category' => $message->tag ] + $tags;
+		}
+
+		foreach ( $tags as $name => $value ) {
+			$payload['tags'][] = [
+				'name'  => self::tag_word( (string) $name ),
+				'value' => self::tag_word( (string) $value ),
+			];
+		}
+
 		foreach ( self::files( $message->attachments ) as $file ) {
 			$payload['attachments'][] = [
 				'filename' => $file['name'],
@@ -108,5 +126,16 @@ final class Resend implements Transport {
 	 */
 	public function name(): string {
 		return 'resend';
+	}
+
+	/**
+	 * A word Resend takes in a tag: letters, numbers, `_` and `-`, up to 256.
+	 *
+	 * @param string $word As given.
+	 *
+	 * @return string
+	 */
+	private static function tag_word( string $word ): string {
+		return substr( (string) preg_replace( '/[^A-Za-z0-9_-]/', '_', $word ), 0, 256 );
 	}
 }

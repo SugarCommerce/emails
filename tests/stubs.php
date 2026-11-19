@@ -95,8 +95,26 @@ if ( ! function_exists( 'sanitize_key' ) ) {
 }
 
 if ( ! function_exists( 'sanitize_email' ) ) {
+	/**
+	 * Core's, in short: what an address cannot hold is stripped out rather
+	 * than the value refused, so `Jane <jane@example.test>` comes back as
+	 * `Janejane@example.test` -- the mangling the library has to avoid.
+	 */
 	function sanitize_email( $email ) {
-		return filter_var( trim( (string) $email ), FILTER_VALIDATE_EMAIL ) ?: '';
+		$email = trim( (string) $email );
+
+		if ( strlen( $email ) < 6 || false === strpos( $email, '@', 1 ) ) {
+			return '';
+		}
+
+		[ $local, $domain ] = explode( '@', $email, 2 );
+
+		$local   = (string) preg_replace( '/[^a-zA-Z0-9!#$%&\'*+\/=?^_`{|}~\.-]/', '', $local );
+		$domain  = trim( (string) preg_replace( '/\.{2,}/', '', $domain ), " \t\n\r\0\x0B." );
+		$subs    = array_filter( array_map( static fn( $sub ) => trim( (string) preg_replace( '/[^a-z0-9-]+/i', '', $sub ), " \t\n\r\0\x0B-" ), explode( '.', $domain ) ), 'strlen' );
+		$address = $local . '@' . implode( '.', $subs );
+
+		return '' === $local || count( $subs ) < 2 ? '' : $address;
 	}
 }
 
@@ -108,7 +126,7 @@ if ( ! function_exists( 'get_option' ) ) {
 
 if ( ! function_exists( 'get_bloginfo' ) ) {
 	function get_bloginfo( $show = '' ) {
-		return [ 'name' => 'Example Shop', 'charset' => 'UTF-8', 'language' => $GLOBALS['re_language'] ][ $show ] ?? '';
+		return [ 'name' => $GLOBALS['re_site_name'] ?? 'Example Shop', 'charset' => 'UTF-8', 'language' => $GLOBALS['re_language'] ][ $show ] ?? '';
 	}
 }
 
