@@ -362,6 +362,73 @@ final class MailerTest extends TestCase {
 		$this->assertStringContainsString( '<p>Given body</p>', $mail['message'] );
 	}
 
+	public function test_files_and_copies_come_from_the_registration_the_caller_and_the_filters(): void {
+		$invoice = tempnam( sys_get_temp_dir(), 'inv' );
+		$terms   = tempnam( sys_get_temp_dir(), 'terms' );
+		$extra   = tempnam( sys_get_temp_dir(), 'extra' );
+
+		$mailer = $this->mailer(
+			static function ( Mailer $mailer ) use ( $invoice ): void {
+				$mailer->register_email(
+					'receipt',
+					[
+						'subject'     => 'Order {order_number}',
+						'body'        => 'Thanks.',
+						'attachments' => static fn( $order, string $id ): array => 'receipt' === $id && 5 === $order->id ? [ $invoice ] : [],
+						'bcc'         => 'books@example.test',
+					]
+				);
+			}
+		);
+
+		add_filter( 'shop_email_attachments', static fn( array $paths, string $id, $order ): array => array_merge( $paths, [ $extra, '/no/such/file.pdf' ] ) );
+		add_filter( 'shop_email_cc', static fn( array $cc ): array => array_merge( $cc, [ 'boss@example.test' ] ) );
+		add_filter(
+			'shop_email_headers',
+			static fn(): array => [
+				'X-Order-Id' => '5',
+				'Bcc'        => 'sneaky@example.test',
+				'Bad Name'   => 'x',
+			]
+		);
+
+		$built = null;
+		$GLOBALS['re_hooks']['shop_email_before_send'][] = static function ( $email, string $id, $order ) use ( &$built ): void {
+			$built = [ $id, $order->id ];
+		};
+
+		$this->assertTrue( $mailer->send( 'receipt', 5, [ 'attachments' => [ $terms ], 'cc' => 'partner@example.test' ] ) );
+
+		$mail    = $this->last_mail();
+		$headers = implode( "\n", (array) $mail['headers'] );
+
+		$this->assertSame( [ $invoice, $terms, $extra ], $mail['attachments'] );
+		$this->assertStringContainsString( 'Cc: partner@example.test', $headers );
+		$this->assertStringContainsString( 'boss@example.test', $headers );
+		$this->assertStringContainsString( 'Bcc: books@example.test', $headers );
+		$this->assertStringContainsString( 'X-Order-Id: 5', $headers );
+		$this->assertStringNotContainsString( 'sneaky@example.test', $headers );
+		$this->assertStringNotContainsString( 'Bad Name', $headers );
+		$this->assertSame( [ 'receipt', 5 ], $built );
+
+		// Nothing given, nothing added.
+		$this->mailer()->send( 'admin_sale', 5 );
+
+		unlink( $invoice );
+		unlink( $terms );
+		unlink( $extra );
+	}
+
+	public function test_an_email_with_nothing_extra_has_no_files_or_copies(): void {
+		$this->mailer()->send( 'receipt', 5 );
+
+		$mail = $this->last_mail();
+
+		$this->assertSame( [], $mail['attachments'] );
+		$this->assertStringNotContainsString( 'Cc:', implode( "\n", (array) $mail['headers'] ) );
+		$this->assertContains( 'shop_email_before_send', $GLOBALS['re_actions'] );
+	}
+
 	public function test_errors_name_the_problem_and_the_failure_is_announced(): void {
 		$mailer = $this->mailer();
 

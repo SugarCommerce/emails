@@ -137,6 +137,27 @@ edited is replaced by the new wording.
 `admin_email` key, then the site's address) or a callable. Everything comes from `from_name` / `from_address`, with a
 Reply-To from `reply_to` when it is elsewhere; empty is the site's name at `wordpress@` its domain.
 
+**Files, copies and headers.** An email can carry attachments and copies from three places, added together: its
+registration (`attachments`, `cc`, `bcc`, each a list, one value, or a callable given the record and the email's id),
+the caller (`$mailer->send( 'receipt', $id, [ 'attachments' => [ $pdf ], 'cc' => 'partner@example.com' ] )`) and the
+filters, so one plugin adds a PDF invoice to another's receipt without either knowing of the other:
+
+```php
+add_filter( 'myshop_email_attachments', function ( array $paths, string $id, $order ) {
+	return 'receipt' === $id ? array_merge( $paths, [ myinvoices_pdf_path( $order ) ] ) : $paths;
+}, 10, 3 );
+
+add_filter( 'myshop_email_bcc', fn( array $bcc, string $id ) => 'admin_sale' === $id ? [ ...$bcc, 'books@example.com' ] : $bcc, 10, 2 );
+add_filter( 'myshop_email_headers', fn( array $headers, string $id, $order ) => [ 'X-Order-Id' => (string) $order->id ] + $headers, 10, 3 );
+
+// The email itself, last: anything the filters cannot say.
+add_action( 'myshop_email_before_send', function ( Email $email, string $id, $order ) {}, 10, 3 );
+```
+
+A file that cannot be read is left off. `{prefix}_email_cc` is the same as Bcc. A header named From, Reply-To, To, Cc,
+Bcc, Subject or Content-Type, or not one word, is left off: those have their own ways in. These apply wherever a
+registered email is built and sent, a test included.
+
 **Contexts.** An email names what it is about, which decides the tags its editor offers and the record they are given.
 Add one with `{prefix}_email_contexts`.
 

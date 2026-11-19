@@ -29,6 +29,14 @@ use WP_Error;
 final class Sender {
 
 	/**
+	 * What goes with an email besides its words, from its registration and
+	 * from whoever sends it.
+	 *
+	 * @var array<int, string>
+	 */
+	private const EXTRAS = [ 'attachments', 'cc', 'bcc' ];
+
+	/**
 	 * Construct.
 	 *
 	 * @param Mailer $mailer The mailer.
@@ -40,7 +48,10 @@ final class Sender {
 	 *
 	 * @param string               $id     The email.
 	 * @param mixed                $record What it is about: a row or an id.
-	 * @param array<string, mixed> $args   `to`, `subject`, `body`.
+	 * @param array<string, mixed> $args   `to`, `subject`, `body`; and
+	 *                                     `attachments` (file paths), `cc`
+	 *                                     and `bcc` (addresses), added to
+	 *                                     what the email was registered with.
 	 *
 	 * @return true|WP_Error True when it went, or was not meant to.
 	 */
@@ -111,6 +122,12 @@ final class Sender {
 			$overrides['content'] = wpautop( (string) $args['body'] );
 		}
 
+		foreach ( self::EXTRAS as $extra ) {
+			if ( isset( $args[ $extra ] ) ) {
+				$overrides[ $extra ] = $args[ $extra ];
+			}
+		}
+
 		$sent = $this->deliver( $id, $overrides );
 
 		if ( is_wp_error( $sent ) ) {
@@ -148,9 +165,133 @@ final class Sender {
 	 * @return true|WP_Error
 	 */
 	public function deliver( string $id, array $overrides ): true|WP_Error {
-		$email = Emails::compose( $this->mailer->group(), $id, $overrides );
+		$email = Emails::compose( $this->mailer->group(), $id, array_diff_key( $overrides, array_flip( self::EXTRAS ) ) );
 
-		return is_wp_error( $email ) ? $email : $this->from_site( $email )->via( $this->mailer->transport() )->send();
+		if ( is_wp_error( $email ) ) {
+			return $email;
+		}
+
+		$this->extras( $email, $id, $overrides );
+
+		return $this->from_site( $email )->via( $this->mailer->transport() )->send();
+	}
+
+	/**
+	 * Put on what goes with an email besides its words: files, copies to
+	 * others, headers of its own.
+	 *
+	 * From its registration (`attachments`, `cc`, `bcc`: a list, or a
+	 * callable given what it is about and its id), then from the caller,
+	 * then through the filters -- so a plugin adds a PDF invoice to
+	 * another plugin's receipt, or a copy to the bookkeeper, without
+	 * either knowing of the other.
+	 *
+	 * @param Email                $email     The email, built.
+	 * @param string               $id        Which it is.
+	 * @param array<string, mixed> $overrides What deliver() was given.
+	 *
+	 * @return void
+	 */
+	private function extras( Email $email, string $id, array $overrides ): void {
+		$about      = $overrides['data'] ?? null;
+		$registered = $this->mailer->registry()->get( $id ) ?? [];
+		$lists      = [];
+
+		foreach ( self::EXTRAS as $extra ) {
+			$lists[ $extra ] = array_merge(
+				self::listed( $registered[ $extra ] ?? [], $about, $id ),
+				self::listed( $overrides[ $extra ] ?? [], $about, $id )
+			);
+		}
+
+		/**
+		 * Filter the files sent with an email.
+		 *
+		 * @param array<int, string> $paths The files, as paths on this server.
+		 *                                  One that cannot be read is left off.
+		 * @param string             $id    The email.
+		 * @param mixed              $about What it is about.
+		 */
+		$attachments = (array) apply_filters( $this->mailer->hook( 'email_attachments' ), $lists['attachments'], $id, $about );
+
+		/**
+		 * Filter who is copied in on an email.
+		 *
+		 * @param array<int, string> $cc    The addresses.
+		 * @param string             $id    The email.
+		 * @param mixed              $about What it is about.
+		 */
+		$cc = (array) apply_filters( $this->mailer->hook( 'email_cc' ), $lists['cc'], $id, $about );
+
+		/**
+		 * Filter who is copied in on an email without the others seeing.
+		 *
+		 * @param array<int, string> $bcc   The addresses.
+		 * @param string             $id    The email.
+		 * @param mixed              $about What it is about.
+		 */
+		$bcc = (array) apply_filters( $this->mailer->hook( 'email_bcc' ), $lists['bcc'], $id, $about );
+
+		/**
+		 * Filter an email's headers of its own, by name: `X-Order-Id`.
+		 *
+		 * From, Reply-To, Cc and Bcc have their own ways in; a name that is
+		 * not one word, or a value with a line break, is left off.
+		 *
+		 * @param array<string, string> $headers By name.
+		 * @param string                $id      The email.
+		 * @param mixed                 $about   What it is about.
+		 */
+		$headers = (array) apply_filters( $this->mailer->hook( 'email_headers' ), [], $id, $about );
+
+		foreach ( $attachments as $path ) {
+			$email->attach( (string) $path );
+		}
+
+		foreach ( $cc as $address ) {
+			$email->cc( (string) $address );
+		}
+
+		foreach ( $bcc as $address ) {
+			$email->bcc( (string) $address );
+		}
+
+		foreach ( $headers as $name => $value ) {
+			if ( ! in_array( strtolower( (string) $name ), [ 'from', 'reply-to', 'cc', 'bcc', 'to', 'subject', 'content-type' ], true ) ) {
+				$email->header( (string) $name, (string) $value );
+			}
+		}
+
+		/**
+		 * Fires as an email is about to go, with the email itself: the last
+		 * word on anything above.
+		 *
+		 * @param Email  $email The email.
+		 * @param string $id    Which it is.
+		 * @param mixed  $about What it is about.
+		 */
+		do_action( $this->mailer->hook( 'email_before_send' ), $email, $id, $about );
+	}
+
+	/**
+	 * A list given as a list, one value, or a callable returning either.
+	 *
+	 * @param mixed  $given What was given.
+	 * @param mixed  $about What the email is about.
+	 * @param string $id    The email.
+	 *
+	 * @return array<int, string>
+	 */
+	private static function listed( mixed $given, mixed $about, string $id ): array {
+		if ( is_callable( $given ) && ! is_string( $given ) ) {
+			$given = $given( $about, $id );
+		}
+
+		if ( is_string( $given ) ) {
+			$given = explode( ',', $given );
+		}
+
+		return array_values( array_filter( array_map( static fn( $value ): string => trim( (string) $value ), (array) $given ), 'strlen' ) );
 	}
 
 	/**
