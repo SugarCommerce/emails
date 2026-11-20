@@ -13,7 +13,7 @@ declare( strict_types=1 );
 namespace SugarCommerce\Emails\Components;
 
 use SugarCommerce\Emails\Abstracts\Component;
-use SugarCommerce\Money\Money;
+use SugarCommerce\Plugin\Build;
 
 /**
  * What was bought, as a table with the sums under it.
@@ -176,8 +176,13 @@ class OrderItems extends Component {
 			return (string) call_user_func( $format, $amount, $currency );
 		}
 
-		if ( class_exists( Money::class ) ) {
-			return Money::format( $amount, [ 'currency' => $currency ] );
+		// sugarcommerce/money in this build, which this package can do
+		// without: asked by name, never imported, so a plugin that left it
+		// out never formats with SugarCart's unprefixed copy.
+		$money = Build::sibling( __NAMESPACE__, 3, 'Money\\Money' );
+
+		if ( class_exists( $money ) ) {
+			return $money::format( $amount, [ 'currency' => $currency ] );
 		}
 
 		$decimals = self::decimals( $currency );
