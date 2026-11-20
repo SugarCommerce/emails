@@ -12,7 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Traits\Sender;
 
-use SugarCommerce\Emails\Address;
+use SugarCommerce\Emails\Models\Address;
 
 /**
  * Settings: whether an email is on, and its saved subject, heading and body.

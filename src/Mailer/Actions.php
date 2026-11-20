@@ -15,7 +15,7 @@ namespace SugarCommerce\Emails\Mailer;
 use SugarCommerce\Emails\Delivery;
 use SugarCommerce\Emails\Emails;
 use SugarCommerce\Emails\Mailer;
-use SugarCommerce\Emails\Message;
+use SugarCommerce\Emails\Models\Message;
 use WP_Error;
 
 /**

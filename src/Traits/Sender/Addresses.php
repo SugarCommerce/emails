@@ -12,9 +12,9 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Traits\Sender;
 
-use SugarCommerce\Emails\Address;
 use SugarCommerce\Emails\Email;
 use SugarCommerce\Emails\Mailer;
+use SugarCommerce\Emails\Models\Address;
 
 /**
  * Addresses: who a registered email is from and to, and its headers.

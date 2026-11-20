@@ -12,7 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Traits\Email;
 
-use SugarCommerce\Emails\Address;
+use SugarCommerce\Emails\Models\Address;
 
 /**
  * Addresses: who it goes to, who it is from, and who is copied in.

@@ -10,7 +10,7 @@
 
 declare( strict_types=1 );
 
-namespace SugarCommerce\Emails;
+namespace SugarCommerce\Emails\Models;
 
 /**
  * An email that is finished and ready to leave: what a transport is handed.

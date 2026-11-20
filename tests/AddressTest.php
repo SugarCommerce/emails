@@ -12,7 +12,7 @@ namespace SugarCommerce\Emails\Tests;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use SugarCommerce\Emails\Address;
+use SugarCommerce\Emails\Models\Address;
 
 /**
  * An address and its name: read the way people write them, written the way

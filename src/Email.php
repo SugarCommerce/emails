@@ -12,6 +12,7 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails;
 
+use SugarCommerce\Emails\Models\Result;
 use SugarCommerce\Emails\Traits\Email\Addresses;
 use SugarCommerce\Emails\Traits\Email\Rendering;
 use SugarCommerce\Emails\Traits\Email\Sending;

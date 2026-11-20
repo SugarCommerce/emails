@@ -13,8 +13,8 @@ declare( strict_types=1 );
 namespace SugarCommerce\Emails\Traits\Email;
 
 use SugarCommerce\Emails\Delivery;
-use SugarCommerce\Emails\Message;
-use SugarCommerce\Emails\Result;
+use SugarCommerce\Emails\Models\Message;
+use SugarCommerce\Emails\Models\Result;
 use SugarCommerce\Emails\Utils\Runtime;
 use WP_Error;
 

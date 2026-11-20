@@ -12,6 +12,9 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails;
 
+use SugarCommerce\Emails\Models\Address;
+use SugarCommerce\Emails\Models\Message;
+use SugarCommerce\Emails\Models\Result;
 use SugarCommerce\Emails\Transports\WpMail;
 use SugarCommerce\Emails\Utils\Runtime;
 

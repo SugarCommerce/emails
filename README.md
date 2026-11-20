@@ -98,7 +98,7 @@ An address may be written the way people write them -- `->to( 'Jane Doe <jane@ex
 a customer typed -- `{VIP}` in a name, a note, a licence key -- are sent as typed.
 
 ```php
-use SugarCommerce\Emails\Address;
+use SugarCommerce\Emails\Models\Address;
 
 Address::parse( '"Acme, Inc." <shop@example.com>' );           // ->email, ->name
 Address::list( '"Accounts, Ltd" <a@example.com>, b@example.com' ); // two, the quoted comma kept
@@ -245,8 +245,10 @@ A Strauss prefix that itself starts `SugarCommerce\` keeps all its segments -- `
   settings).
 * `src/Components/`, `src/Parts/`, `src/Render/`: what a tag can draw, the
   logo and footer, and the tag processor.
-* `src/Delivery.php`, `Transport.php`, `Message.php`, `Result.php`,
-  `Address.php` and `src/Transports/`: how a message is sent.
+* `src/Delivery.php`, `Transport.php` and `src/Transports/`: how a message is sent.
+* `src/Models/`: data shapes and nothing that does work. `Message.php` (a
+  finished email, as a transport is handed it), `Result.php` (how handing it
+  over went) and `Address.php` (an address and its name).
 
 ## Requirements
 

@@ -10,7 +10,7 @@
 
 declare( strict_types=1 );
 
-namespace SugarCommerce\Emails;
+namespace SugarCommerce\Emails\Models;
 
 use WP_Error;
 

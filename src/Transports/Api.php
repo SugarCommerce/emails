@@ -12,8 +12,8 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Transports;
 
-use SugarCommerce\Emails\Address;
-use SugarCommerce\Emails\Result;
+use SugarCommerce\Emails\Models\Address;
+use SugarCommerce\Emails\Models\Result;
 
 /**
  * One JSON POST through WordPress's HTTP API, and a consistent reading of

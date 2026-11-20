@@ -12,8 +12,8 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Transports;
 
-use SugarCommerce\Emails\Message;
-use SugarCommerce\Emails\Result;
+use SugarCommerce\Emails\Models\Message;
+use SugarCommerce\Emails\Models\Result;
 use SugarCommerce\Emails\Transport;
 
 /**
