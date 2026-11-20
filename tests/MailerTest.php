@@ -858,6 +858,20 @@ final class MailerTest extends TestCase {
 		$this->assertStringContainsString( 'srcdoc="&lt;p title=&quot;x&quot;&gt;&amp;lt;b&amp;gt;&lt;/p&gt;"', $frame );
 	}
 
+	/**
+	 * The preview is drawn in a sandbox: a script anywhere in an email --
+	 * a tag that writes HTML, a pasted body -- cannot run as wp-admin.
+	 *
+	 * @return void
+	 */
+	public function test_the_preview_frame_is_sandboxed(): void {
+		$frame = $this->mailer()->actions()->frame( '<script>parent.alert(1)</script>' );
+
+		$this->assertMatchesRegularExpression( '/<iframe [^>]*\bsandbox="[^"]*"/', $frame );
+		$this->assertStringNotContainsString( 'allow-scripts', $frame );
+		$this->assertStringNotContainsString( 'allow-same-origin', $frame );
+	}
+
 	public function test_a_test_goes_to_whoever_asked_about_the_newest_record(): void {
 		$this->latest = 5;
 

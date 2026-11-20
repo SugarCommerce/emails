@@ -39,6 +39,7 @@ class Coupon extends Component {
 	 * @return string Coupon HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$code        = $args['code'] ?? '';
 		$description = $args['description'] ?? '';
@@ -93,6 +94,7 @@ class Coupon extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return 'code';
 	}

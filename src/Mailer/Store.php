@@ -34,7 +34,7 @@ final class Store {
 	 *
 	 * @var array<string, string>
 	 */
-	public const PREFIXED = [
+	public const array PREFIXED = [
 		'template'       => 'template',
 		'color'          => 'brand_color',
 		'logo'           => 'logo',
@@ -59,7 +59,7 @@ final class Store {
 	 *
 	 * @var string[]
 	 */
-	public const OPTIONAL = [ 'reply_to', 'admin_email', 'business_name' ];
+	public const array OPTIONAL = [ 'reply_to', 'admin_email', 'business_name' ];
 
 	/**
 	 * Construct.

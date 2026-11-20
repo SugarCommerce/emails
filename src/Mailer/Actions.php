@@ -37,7 +37,7 @@ final class Actions {
 	 *
 	 * @var string[]
 	 */
-	public const LOOK = [ 'template', 'color', 'logo', 'logo_height', 'align', 'footer', 'footer_enabled' ];
+	public const array LOOK = [ 'template', 'color', 'logo', 'logo_height', 'align', 'footer', 'footer_enabled' ];
 
 	/**
 	 * Construct.
@@ -140,13 +140,17 @@ final class Actions {
 	 * alone, so the &lt; of a customer's name written as text came out of
 	 * the attribute as < and the preview drew markup the email would not.
 	 *
+	 * Sandboxed, without scripts or the admin's origin: an email can carry
+	 * HTML a tag or a pasted body put there, and a preview is no place for
+	 * it to run as the signed-in admin. Links still open, in a new tab.
+	 *
 	 * @param string $html The email, a whole page of markup.
 	 *
 	 * @return string
 	 */
 	public function frame( string $html ): string {
 		return sprintf(
-			'<iframe class="sugarcommerce-emails-preview" title="%1$s" style="width:100%%;height:600px;border:1px solid #dcdcde;border-radius:4px;background:#fff" srcdoc="%2$s"></iframe>',
+			'<iframe class="sugarcommerce-emails-preview" title="%1$s" sandbox="allow-popups allow-popups-to-escape-sandbox" style="width:100%%;height:600px;border:1px solid #dcdcde;border-radius:4px;background:#fff" srcdoc="%2$s"></iframe>',
 			esc_attr( $this->mailer->label( 'preview_title' ) ),
 			htmlspecialchars( $html, ENT_QUOTES, 'UTF-8', true )
 		);

@@ -107,6 +107,26 @@ final class ComponentsTest extends TestCase {
 		$this->assertSame( 'XYZ 1.00', OrderItems::amount( 100, 'xyz' ) );
 	}
 
+	/**
+	 * A table's column alignment is one of three words, never something
+	 * that ends the style attribute it is written into.
+	 *
+	 * @return void
+	 */
+	public function test_a_table_alignment_cannot_leave_its_attribute(): void {
+		$html = Components::render(
+			'table',
+			[
+				'data'       => [ [ 'Item', 'Total' ], [ 'Mug', '£8' ] ],
+				'alignments' => [ 'right', 'left;" onmouseover="alert(1)' ],
+			]
+		);
+
+		$this->assertStringNotContainsString( 'onmouseover', $html );
+		$this->assertStringContainsString( 'text-align: right;', $html );
+		$this->assertStringContainsString( 'align-left', $html );
+	}
+
 	public function test_an_alert_can_lead_with_a_title(): void {
 		$html = Components::render( 'alert', [ 'title' => 'Test <mode>.', 'message' => 'Nothing was charged.', 'type' => 'warning' ] );
 

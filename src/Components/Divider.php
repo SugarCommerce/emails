@@ -31,6 +31,7 @@ class Divider extends Component {
 	 * @return string Divider HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		return '<hr class="component component-divider" style="border: 0; border-top: 1px solid #e5e7eb; margin: 32px 0;">';
 	}
@@ -46,6 +47,7 @@ class Divider extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return 'style';
 	}

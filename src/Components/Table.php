@@ -37,6 +37,7 @@ class Table extends Component {
 	 * @return string Table HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$data       = $args['data'] ?? [];
 		$has_header = $args['has_header'] ?? true;
@@ -83,7 +84,9 @@ class Table extends Component {
 				$style = 'padding: 12px;';
 
 				// Alignment
+				// One of three words: it is written into the style attribute.
 				$align = $alignments[ $col_index ] ?? 'left';
+				$align = in_array( $align, [ 'left', 'center', 'right' ], true ) ? $align : 'left';
 				$style .= ' text-align: ' . $align . ';';
 				$cell_classes .= ' align-' . $align;
 

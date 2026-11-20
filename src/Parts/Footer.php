@@ -36,6 +36,7 @@ class Footer extends Component {
 	 * @return string Footer HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$text         = $args['text'] ?? '';
 		$links        = $args['links'] ?? [];

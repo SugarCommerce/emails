@@ -30,7 +30,7 @@ class Alert extends Component {
 	 * @since 1.0.0
 	 * @var array
 	 */
-	private const COLORS = [
+	private const array COLORS = [
 		'info'    => '#3b82f6',
 		'success' => '#10b981',
 		'warning' => '#f59e0b',
@@ -50,6 +50,7 @@ class Alert extends Component {
 	 * @return string Alert HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$message = $args['message'] ?? '';
 		$type    = $args['type'] ?? 'info';
@@ -87,6 +88,7 @@ class Alert extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return 'message';
 	}

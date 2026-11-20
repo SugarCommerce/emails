@@ -29,7 +29,7 @@ class Button extends Component {
 	 * @since 1.0.0
 	 * @var array
 	 */
-	private const VALID_ALIGNMENTS = [ 'left', 'center', 'right' ];
+	private const array VALID_ALIGNMENTS = [ 'left', 'center', 'right' ];
 
 	/**
 	 * Render button component
@@ -47,6 +47,7 @@ class Button extends Component {
 	 * @return string Button HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$text       = $args['text'] ?? '';
 		$url        = $args['url'] ?? '#';
@@ -109,6 +110,7 @@ class Button extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return 'text';
 	}

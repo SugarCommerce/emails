@@ -76,7 +76,8 @@ trait Api {
 		}
 
 		$status  = (int) wp_remote_retrieve_response_code( $response );
-		$decoded = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		$raw     = (string) wp_remote_retrieve_body( $response );
+		$decoded = json_validate( $raw ) ? json_decode( $raw, true ) : null;
 		$decoded = is_array( $decoded ) ? $decoded : [];
 
 		if ( $status >= 200 && $status < 300 ) {

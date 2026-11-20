@@ -12,10 +12,9 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails;
 
-use SugarCommerce\Emails\Render\Processor;
-use SugarCommerce\Emails\Utils\Runtime;
-use SugarCommerce\Text\Display\Color;
-use WP_Error;
+use SugarCommerce\Emails\Traits\Email\Addresses;
+use SugarCommerce\Emails\Traits\Email\Rendering;
+use SugarCommerce\Emails\Traits\Email\Sending;
 
 /**
  * One email, built and sent.
@@ -52,6 +51,10 @@ use WP_Error;
  */
 final class Email {
 
+	use Addresses;
+	use Rendering;
+	use Sending;
+
 	/**
 	 * The template placeholders that take markup.
 	 *
@@ -61,7 +64,7 @@ final class Email {
 	 *
 	 * @var string[]
 	 */
-	private const MARKUP = [ 'content', 'logo', 'footer' ];
+	private const array MARKUP = [ 'content', 'logo', 'footer' ];
 
 	/**
 	 * Who it goes to.
@@ -227,30 +230,6 @@ final class Email {
 	}
 
 	/**
-	 * Who it goes to.
-	 *
-	 * `jane@example.com` or `Jane Doe <jane@example.com>`: the address is
-	 * taken out of the brackets. Handed whole to sanitize_email(), that
-	 * second one became `Janejane@example.com` -- a stranger's inbox, or a
-	 * bounce, and nobody told.
-	 *
-	 * @param string|string[] $to One address or several.
-	 *
-	 * @return self
-	 */
-	public function to( string|array $to ): self {
-		foreach ( (array) $to as $address ) {
-			$address = self::email_of( (string) $address );
-
-			if ( '' !== $address ) {
-				$this->to[] = $address;
-			}
-		}
-
-		return $this;
-	}
-
-	/**
 	 * What it says it is about.
 	 *
 	 * @param string $subject The subject.
@@ -364,70 +343,6 @@ final class Email {
 	}
 
 	/**
-	 * Who it comes from.
-	 *
-	 * @param string $email The address, or `Name <address>`.
-	 * @param string $name  The name. Empty to keep the one written with
-	 *                      the address, if any.
-	 *
-	 * @return self
-	 */
-	public function from( string $email, string $name = '' ): self {
-		$this->from = self::named( $email, $name ) ?? $this->from;
-
-		return $this;
-	}
-
-	/**
-	 * Where a reply goes.
-	 *
-	 * @param string $email The address, or `Name <address>`.
-	 * @param string $name  The name. Empty to keep the one written with
-	 *                      the address, if any.
-	 *
-	 * @return self
-	 */
-	public function reply_to( string $email, string $name = '' ): self {
-		$this->reply = self::named( $email, $name ) ?? $this->reply;
-
-		return $this;
-	}
-
-	/**
-	 * Who else gets it.
-	 *
-	 * @param string $email The address, or `Name <address>`.
-	 *
-	 * @return self
-	 */
-	public function cc( string $email ): self {
-		$email = self::email_of( $email );
-
-		if ( '' !== $email ) {
-			$this->cc[] = $email;
-		}
-
-		return $this;
-	}
-
-	/**
-	 * Who else gets it, quietly.
-	 *
-	 * @param string $email The address, or `Name <address>`.
-	 *
-	 * @return self
-	 */
-	public function bcc( string $email ): self {
-		$email = self::email_of( $email );
-
-		if ( '' !== $email ) {
-			$this->bcc[] = $email;
-		}
-
-		return $this;
-	}
-
-	/**
 	 * Something for the provider to send back with a bounce or a complaint.
 	 *
 	 * Put the order's id here and a bounce webhook says which order it was
@@ -526,345 +441,6 @@ final class Email {
 		$this->transport = $transport;
 
 		return $this;
-	}
-
-	/**
-	 * The finished email.
-	 *
-	 * @return string
-	 */
-	public function html(): string {
-		$processor = new Processor( $this->groups );
-
-		// The subject takes the same tags as the body — `Your order from
-		// {site_name}` is the first example in the README — and used to be
-		// sent as typed, because only the body was filled in. It is a
-		// header: what a tag returns goes in as words, on one line.
-		$this->resolved_subject = self::one_line( $processor->plain( $this->subject, $this->data ) );
-
-		// Kept before each run, because a run starts a fresh report.
-		$problems = $processor->problems();
-		$unknown  = $processor->unknown();
-
-		$preheader = self::one_line( $processor->plain( $this->preheader, $this->data ) );
-		$problems  = array_merge( $problems, $processor->problems() );
-		$unknown   = array_merge( $unknown, $processor->unknown() );
-
-		$body = $processor->process( $this->content, $this->data );
-
-		$this->problems = array_merge( $problems, $processor->problems() );
-		$this->unknown  = array_values( array_unique( array_merge( $unknown, $processor->unknown() ) ) );
-
-		return $this->wrap( $body, $this->resolved_subject, $preheader );
-	}
-
-	/**
-	 * The finished email, with samples where the real values would be.
-	 *
-	 * @return string
-	 */
-	public function preview(): string {
-		$processor = new Processor( $this->groups );
-
-		return $this->wrap(
-			$processor->preview( $this->content ),
-			self::one_line( $processor->preview( $this->subject ) ),
-			self::one_line( wp_strip_all_tags( $processor->preview( $this->preheader ) ) )
-		);
-	}
-
-	/**
-	 * What went wrong filling the tags in.
-	 *
-	 * @return array<string, string>
-	 */
-	public function problems(): array {
-		return $this->problems;
-	}
-
-	/**
-	 * The tags the last build met that nobody registered.
-	 *
-	 * Taken out rather than sent, and not a failure -- an email may mention
-	 * a tag from a group it did not name -- but the usual cause is a typo
-	 * and the usual symptom a gap in a sentence. Worth asserting empty
-	 * across every email in a test.
-	 *
-	 * @return string[]
-	 */
-	public function unknown(): array {
-		return $this->unknown;
-	}
-
-	/**
-	 * How the last send went: the provider's message id, or why not and
-	 * whether trying again could help. Null before a send.
-	 *
-	 * @return Result|null
-	 */
-	public function result(): ?Result {
-		return $this->result;
-	}
-
-	/**
-	 * The finished email as a transport is handed it.
-	 *
-	 * For a queue that sends later, or a test that wants to look. Builds it,
-	 * so problems() and unknown() are about this build.
-	 *
-	 * @return Message
-	 */
-	public function message(): Message {
-		$html = $this->html();
-
-		return new Message(
-			to: $this->to,
-			subject: $this->resolved_subject,
-			html: $html,
-			text: $this->text,
-			from_email: $this->from[0],
-			from_name: $this->from[1],
-			reply_to: $this->reply[0],
-			reply_to_name: $this->reply[1],
-			cc: $this->cc,
-			bcc: $this->bcc,
-			headers: $this->headers,
-			attachments: $this->attachments,
-			metadata: $this->metadata,
-			tag: $this->tag,
-		);
-	}
-
-	/**
-	 * Send it.
-	 *
-	 * @return true|WP_Error
-	 */
-	public function send(): true|WP_Error {
-		$this->result = null;
-
-		if ( [] === $this->to ) {
-			return new WP_Error( 'no_recipient', __( 'The email has nobody to go to.', 'sugarcommerce' ) );
-		}
-
-		$message = $this->message();
-
-		// A tag that could not be filled in leaves a gap in a sentence, and
-		// the sentence is usually the one with the amount in it.
-		if ( [] !== $this->problems ) {
-			return new WP_Error(
-				'tags_failed',
-				sprintf(
-					/* translators: %s: what went wrong, one per tag. */
-					__( 'The email was not sent because some of it could not be filled in: %s', 'sugarcommerce' ),
-					implode( ' ', $this->problems )
-				),
-				[ 'problems' => $this->problems ]
-			);
-		}
-
-		$this->result = Delivery::send( $message, $this->transport );
-
-		/**
-		 * Fires after an email has been handed over.
-		 *
-		 * @param bool     $sent    Whether it went.
-		 * @param string[] $to      Who to.
-		 * @param string   $subject What it says it is about.
-		 * @param Result   $result  How it went, in full.
-		 */
-		do_action( Runtime::hook( 'sent' ), $this->result->sent, $this->to, $this->resolved_subject, $this->result );
-
-		return $this->result->to_wp();
-	}
-
-	/**
-	 * Put the body inside the visual template.
-	 *
-	 * @param string $body      The body, with its tags filled in.
-	 * @param string $subject   The subject, with its tags filled in.
-	 * @param string $preheader The inbox line, with its tags filled in.
-	 *
-	 * @return string
-	 */
-	private function wrap( string $body, string $subject, string $preheader = '' ): string {
-		$shell = Templates::get( $this->template );
-
-		$replacements = array_merge(
-			self::site_context(),
-			[
-				'title'    => $subject,
-				'subtitle' => '',
-				'footer'   => '',
-				'logo'     => '',
-				'subject'  => $subject,
-			],
-			$this->context,
-			[ 'content' => $body ]
-		);
-
-		$replacements = self::look( $replacements, $this->context );
-
-		$filled = [];
-
-		foreach ( $replacements as $key => $value ) {
-			// Text goes in as text. The title sits inside an <h1>, and a
-			// title built from a customer's name went in as whatever the
-			// name had in it. The body, the logo and the footer are markup by
-			// contract and go in as they are.
-			$filled[ '{' . $key . '}' ] = in_array( $key, self::MARKUP, true )
-				? (string) $value
-				: esc_html( (string) $value );
-		}
-
-		// Anything the template asks for that nobody filled in goes, or it
-		// shows up as `{colour_primary}` in the middle of the email. Read
-		// out of the template alone and taken out in the same single pass
-		// that puts the values in: a sweep of the finished email afterwards
-		// also took `{these}` out of what a customer typed -- a name, a
-		// note, a licence key -- and what a value says is never a tag.
-		if ( preg_match_all( '/\{[a-z0-9_]+\}/i', $shell, $asked ) ) {
-			foreach ( $asked[0] as $placeholder ) {
-				$filled[ $placeholder ] ??= '';
-			}
-		}
-
-		return self::document( strtr( $shell, $filled ), $preheader );
-	}
-
-	/**
-	 * An address and its name, from what was given.
-	 *
-	 * @param string $email The address, or `Name <address>`.
-	 * @param string $name  The name, which wins over one written with the
-	 *                      address.
-	 *
-	 * @return array{0: string, 1: string}|null Null when there is no address.
-	 */
-	private static function named( string $email, string $name ): ?array {
-		$address = Address::try_parse( $email );
-		$email   = sanitize_email( null === $address ? $email : $address->email );
-
-		if ( '' === $email ) {
-			return null;
-		}
-
-		return [ $email, self::one_line( '' !== trim( $name ) || null === $address ? $name : $address->name ) ];
-	}
-
-	/**
-	 * The address part of what was given, made safe, or ''.
-	 *
-	 * @param string $value An address, or `Name <address>`.
-	 *
-	 * @return string
-	 */
-	private static function email_of( string $value ): string {
-		$address = Address::try_parse( $value );
-
-		return sanitize_email( null === $address ? $value : $address->email );
-	}
-
-	/**
-	 * Say what language the email is in, which way it reads, and what the
-	 * inbox should show after the subject.
-	 *
-	 * Done to whatever template was used -- the library's, a theme's copy,
-	 * another plugin's -- so none of them has to remember. A template that
-	 * already says its language is left to say it.
-	 *
-	 * @param string $html      The filled-in template.
-	 * @param string $preheader The inbox line, or empty.
-	 *
-	 * @return string
-	 */
-	private static function document( string $html, string $preheader ): string {
-		$lang = str_replace( '_', '-', function_exists( 'get_bloginfo' ) ? (string) get_bloginfo( 'language' ) : '' );
-		$dir  = function_exists( 'is_rtl' ) && is_rtl() ? 'rtl' : 'ltr';
-
-		if ( 1 === preg_match( '/^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/', $lang ) ) {
-			$html = (string) preg_replace(
-				'/<html(?![^>]*\blang=)([^>]*)>/i',
-				sprintf( '<html lang="%s" dir="%s"$1>', esc_attr( $lang ), $dir ),
-				$html,
-				1
-			);
-		}
-
-		if ( '' === $preheader ) {
-			return $html;
-		}
-
-		// Hidden every way a mail client might show it, and followed by
-		// spacing so the inbox does not run on into the email's first words.
-		$hidden = sprintf(
-			'<div style="display:none;font-size:1px;color:transparent;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">%s%s</div>',
-			esc_html( $preheader ),
-			str_repeat( '&#847;&zwnj;&nbsp;', 40 )
-		);
-
-		$with = (string) preg_replace( '/<body\b[^>]*>/i', '$0' . $hidden, $html, 1, $count );
-
-		return $count > 0 ? $with : $hidden . $html;
-	}
-
-	/**
-	 * The colours and the alignment a template draws with, made safe and
-	 * made to agree with each other.
-	 *
-	 * A site gives one colour. The words on top of it and the links beside
-	 * it follow from that unless the site said otherwise: white words on a
-	 * pale header and a pale link on a white page are both a colour doing
-	 * what it was told and an email nobody can read.
-	 *
-	 * Each of these goes into a `style` attribute, so each is checked for
-	 * being what it claims to be and not merely escaped.
-	 *
-	 * @param array<string, mixed> $replacements Everything the template may ask for.
-	 * @param array<string, mixed> $given        What this email was given itself.
-	 *
-	 * @return array<string, mixed>
-	 */
-	private static function look( array $replacements, array $given ): array {
-		$primary = Color::hex( $replacements['color_primary'] ?? '', '#2271b1' );
-
-		// Whether the colour is light is WCAG's call (Color::contrast); what
-		// goes with a light one is the email's own: near-black words, not
-		// pure black, and a link in the admin's near-black, which its
-		// underline still marks as a link, rather than a pale one on white.
-		$light = Color::is_light( $primary );
-
-		$replacements['color_primary']    = $primary;
-		$replacements['color_on_primary'] = Color::hex( $given['color_on_primary'] ?? '', $light ? '#111111' : '#ffffff' );
-		$replacements['color_link']       = Color::hex( $given['color_link'] ?? '', $light ? '#1d2327' : $primary );
-
-		$align = (string) ( $given['header_align'] ?? '' );
-
-		$replacements['header_align'] = in_array( $align, [ 'left', 'center', 'right' ], true ) ? $align : 'center';
-
-		return $replacements;
-	}
-
-	/**
-	 * What every email knows about the site it came from.
-	 *
-	 * @return array<string, string>
-	 */
-	private static function site_context(): array {
-		return [
-			'site_name'     => (string) get_bloginfo( 'name' ),
-			'site_url'      => home_url(),
-			'admin_email'   => (string) get_option( 'admin_email' ),
-
-			// The site's year, not the server's. A footer that says 2025 for
-			// the first few hours of the new year is a small thing that looks
-			// like nobody is home.
-			'year'          => (string) current_time( 'Y' ),
-			'date'          => (string) current_time( (string) get_option( 'date_format' ) ),
-			'time'          => (string) current_time( (string) get_option( 'time_format' ) ),
-
-			'color_primary' => '#2271b1',
-		];
 	}
 
 	/**

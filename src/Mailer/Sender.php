@@ -12,10 +12,11 @@ declare( strict_types=1 );
 
 namespace SugarCommerce\Emails\Mailer;
 
-use SugarCommerce\Emails\Address;
 use SugarCommerce\Emails\Email;
 use SugarCommerce\Emails\Emails;
 use SugarCommerce\Emails\Mailer;
+use SugarCommerce\Emails\Traits\Sender\Addresses;
+use SugarCommerce\Emails\Traits\Sender\Settings;
 use WP_Error;
 
 /**
@@ -29,13 +30,16 @@ use WP_Error;
  */
 final class Sender {
 
+	use Addresses;
+	use Settings;
+
 	/**
 	 * What goes with an email besides its words, from its registration and
 	 * from whoever sends it.
 	 *
 	 * @var array<int, string>
 	 */
-	private const EXTRAS = [ 'attachments', 'cc', 'bcc' ];
+	private const array EXTRAS = [ 'attachments', 'cc', 'bcc' ];
 
 	/**
 	 * Construct.
@@ -272,295 +276,6 @@ final class Sender {
 		 * @param mixed  $about What it is about.
 		 */
 		do_action( $this->mailer->hook( 'email_before_send' ), $email, $id, $about );
-	}
-
-	/**
-	 * A list given as a list, one value, or a callable returning either.
-	 *
-	 * @param mixed  $given What was given.
-	 * @param mixed  $about What the email is about.
-	 * @param string $id    The email.
-	 *
-	 * @return array<int, string>
-	 */
-	private static function listed( mixed $given, mixed $about, string $id ): array {
-		if ( is_callable( $given ) && ! is_string( $given ) ) {
-			$given = $given( $about, $id );
-		}
-
-		if ( is_string( $given ) ) {
-			$given = explode( ',', $given );
-		}
-
-		return array_values( array_filter( array_map( static fn( $value ): string => trim( (string) $value ), (array) $given ), 'strlen' ) );
-	}
-
-	/**
-	 * Say who an email is from, and where a reply to it goes.
-	 *
-	 * @param Email $email An email that has not been sent yet.
-	 *
-	 * @return Email The same one.
-	 */
-	public function from_site( Email $email ): Email {
-		$sender = $this->identity();
-
-		// With no address there is nothing to name: WordPress's own sender
-		// is used.
-		if ( '' !== $sender['address'] ) {
-			$email->from( $sender['address'], $sender['name'] );
-		}
-
-		if ( '' !== $sender['reply_to'] ) {
-			$email->reply_to( $sender['reply_to'] );
-		}
-
-		return $email;
-	}
-
-	/**
-	 * The same, as header lines, for an email that is not built by Emails:
-	 * a test of an email with nothing yet to be about, which is a preview
-	 * handed straight to wp_mail().
-	 *
-	 * @return array<int, string>
-	 */
-	public function headers(): array {
-		$sender  = $this->identity();
-		$headers = [];
-
-		if ( '' !== $sender['address'] ) {
-			$headers[] = 'From: ' . Address::format_for_wp_mail( $sender['address'], $sender['name'], false );
-		}
-
-		if ( '' !== $sender['reply_to'] ) {
-			$headers[] = 'Reply-To: ' . $sender['reply_to'];
-		}
-
-		return $headers;
-	}
-
-	/**
-	 * Who the site's emails come from, and where a reply to one goes.
-	 *
-	 * One answer for every email a mailer sends, and for a test of any of
-	 * them. A site that has filled in neither is sent from its name, at the
-	 * address WordPress itself would use -- worked out here the way
-	 * wp_mail() works it out, so that a name can be put beside it: a From
-	 * header needs both.
-	 *
-	 * A reply goes to the address under the `reply_to` key when there is
-	 * one and it is not the From address. A From address is very often one
-	 * nobody reads.
-	 *
-	 * @return array{name: string, address: string, reply_to: string}
-	 *         `reply_to` is empty when a reply should go where the email
-	 *         came from.
-	 */
-	public function identity(): array {
-		$store   = $this->mailer->store();
-		$name    = trim( sanitize_text_field( (string) $store->get( $store->key( 'from_name' ), '' ) ) );
-		$address = self::email_of( (string) $store->get( $store->key( 'from_address' ), '' ) );
-		$reply   = self::email_of( (string) $store->get( $store->key( 'reply_to' ), '' ) );
-
-		if ( '' === $name ) {
-			$name = wp_specialchars_decode( (string) get_bloginfo( 'name' ), ENT_QUOTES );
-		}
-
-		if ( '' === $address || ! is_email( $address ) ) {
-			$address = Mailer::default_address();
-		}
-
-		$sender = [
-			'name'     => $name,
-			'address'  => $address,
-
-			// Only when it is somewhere else. A Reply-To that repeats the
-			// From address says nothing.
-			'reply_to' => is_email( $reply ) && strtolower( $reply ) !== strtolower( $address ) ? $reply : '',
-		];
-
-		/**
-		 * Filter who the emails come from.
-		 *
-		 * @param array{name: string, address: string, reply_to: string} $sender
-		 *        The From name, the From address, and where a reply goes
-		 *        (empty for the From address).
-		 */
-		$filtered = (array) apply_filters( $this->mailer->hook( 'email_sender' ), $sender );
-
-		return [
-			'name'     => trim( sanitize_text_field( (string) ( $filtered['name'] ?? $sender['name'] ) ) ),
-			'address'  => self::email_of( (string) ( $filtered['address'] ?? $sender['address'] ) ),
-			'reply_to' => self::email_of( (string) ( $filtered['reply_to'] ?? '' ) ),
-		];
-	}
-
-	/**
-	 * The address in a setting, made safe: `Name <address>` gives the
-	 * address, where sanitize_email() alone made `Nameaddress`.
-	 *
-	 * @param string $value What was saved.
-	 *
-	 * @return string The address, or ''.
-	 */
-	private static function email_of( string $value ): string {
-		return sanitize_email( Address::try_parse( $value )?->email ?? $value );
-	}
-
-	/**
-	 * Whether the site has an email switched on.
-	 *
-	 * What the switch on its panel was saved as; until it has been saved,
-	 * what the email was registered with.
-	 *
-	 * @param string $id The email.
-	 *
-	 * @return bool
-	 */
-	public function enabled( string $id ): bool {
-		$email = $this->mailer->registry()->get( $id );
-
-		if ( null === $email ) {
-			return false;
-		}
-
-		$saved = $this->mailer->store()->saved( (string) $email['setting'] );
-
-		return null !== $saved && array_key_exists( 'enabled', $saved )
-			? (bool) $saved['enabled']
-			: (bool) $email['enabled'];
-	}
-
-	/**
-	 * What the site owner has written for an email, as Emails reads it.
-	 *
-	 * Without `enabled`, which Emails would act on by quietly not sending.
-	 * Whether an email goes is decided in send(), so that a test can still
-	 * be sent from one that is switched off.
-	 *
-	 * @param string $id The email.
-	 *
-	 * @return array<string, mixed> `template` and `context` always; `to`,
-	 *                              `subject` and `content` when written.
-	 */
-	public function stored( string $id ): array {
-		$email = $this->mailer->registry()->get( $id );
-
-		if ( null === $email ) {
-			return [];
-		}
-
-		// The look first: the design the email is drawn in and the colour,
-		// logo and footer the design is filled in with. The same for every
-		// way an email is built, so a preview is what is sent.
-		$stored = $this->mailer->look()->settings( $id );
-		$saved  = $this->mailer->store()->saved( (string) $email['setting'] );
-
-		if ( null === $saved ) {
-			return $stored;
-		}
-
-		// Several addresses, separated by commas, which is what the box
-		// says beside it -- and each may be written `Name <address>`, whose
-		// name may have a comma of its own inside quotes.
-		$to = array_filter( array_map( static fn( Address $address ): string => sanitize_email( $address->email ), Address::list( (string) ( $saved['recipient'] ?? '' ) ) ) );
-
-		if ( [] !== $to ) {
-			$stored['to'] = array_values( $to );
-		}
-
-		if ( '' !== trim( (string) ( $saved['subject'] ?? '' ) ) ) {
-			$stored['subject'] = (string) $saved['subject'];
-		}
-
-		// The editor keeps a body the way WordPress keeps a post, without
-		// its paragraphs; wpautop() puts them back.
-		//
-		// Unless it is wording the email shipped with earlier and nobody
-		// has touched: then it was never the site's own, and the email's
-		// wording as it is now is what goes. See Registry::untouched().
-		if ( '' !== trim( (string) ( $saved['body'] ?? '' ) ) && ! $this->mailer->registry()->untouched( $id, (string) $saved['body'] ) ) {
-			$stored['content'] = wpautop( (string) $saved['body'] );
-		}
-
-		// The heading is the template's title, which sits above the body.
-		// Unless a preview is of a card whose heading has just been
-		// emptied: then the saved one is not what is on the screen.
-		if ( '' !== trim( (string) ( $saved['heading'] ?? '' ) ) && ! $this->mailer->look()->tried( 'no_heading' ) ) {
-			$stored['context']['title'] = (string) $saved['heading'];
-		}
-
-		return $stored;
-	}
-
-	/**
-	 * The subject and body an email would be sent with now.
-	 *
-	 * @param string $id The email.
-	 *
-	 * @return array{subject: string, body: string}
-	 */
-	public function wording( string $id ): array {
-		$email  = $this->mailer->registry()->get( $id ) ?? [];
-		$stored = $this->stored( $id );
-
-		return [
-			'subject' => (string) ( $stored['subject'] ?? $email['subject'] ?? '' ),
-			'body'    => (string) ( $stored['content'] ?? $email['body'] ?? '' ),
-		];
-	}
-
-	/**
-	 * Who an email goes to.
-	 *
-	 * `admin`: whoever the site typed into the panel's Send to box, then
-	 * the address under the `admin_email` key, then the site's admin
-	 * address. A callable: whoever it says. `customer`: the record's
-	 * `email`, then whoever the `customer_email` callable says.
-	 *
-	 * @param string $id    The email.
-	 * @param mixed  $about What it is about.
-	 *
-	 * @return string|string[] Empty when there is nobody.
-	 */
-	public function recipient( string $id, mixed $about ): string|array {
-		$email = $this->mailer->registry()->get( $id ) ?? [];
-		$who   = $email['recipient'] ?? 'customer';
-
-		if ( 'admin' === $who ) {
-			$typed = $this->stored( $id )['to'] ?? [];
-
-			return [] !== $typed ? $typed : $this->admin_email();
-		}
-
-		if ( 'customer' !== $who && is_callable( $who ) ) {
-			$to = call_user_func( $who, $about );
-
-			return is_array( $to ) ? array_values( array_filter( $to ) ) : (string) $to;
-		}
-
-		$own = is_object( $about ) ? ( $about->email ?? '' ) : ( is_array( $about ) ? ( $about['email'] ?? '' ) : '' );
-
-		if ( '' !== (string) $own ) {
-			return (string) $own;
-		}
-
-		$find = $this->mailer->config( 'customer_email' );
-
-		return is_callable( $find ) ? (string) call_user_func( $find, $about ) : '';
-	}
-
-	/**
-	 * Where a note to the site goes when nobody typed an address on its
-	 * panel.
-	 *
-	 * @return string
-	 */
-	public function admin_email(): string {
-		$store = $this->mailer->store();
-
-		return (string) $store->get( $store->key( 'admin_email' ), get_option( 'admin_email' ) );
 	}
 
 	/**

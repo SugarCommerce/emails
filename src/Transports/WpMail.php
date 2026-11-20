@@ -47,6 +47,7 @@ final class WpMail implements Transport {
 	 *
 	 * @return Result
 	 */
+	#[\Override]
 	public function send( Message $message ): Result {
 		$error = '';
 		$text  = $this->text ? $message->text : '';
@@ -89,6 +90,7 @@ final class WpMail implements Transport {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function name(): string {
 		return 'wp_mail';
 	}

@@ -39,7 +39,7 @@ final class Components {
 	 *
 	 * @var array<int, class-string<Component>>
 	 */
-	private const SHIPPED = [
+	private const array SHIPPED = [
 		\SugarCommerce\Emails\Components\Alert::class,
 		\SugarCommerce\Emails\Components\Button::class,
 		\SugarCommerce\Emails\Components\CodeBlock::class,

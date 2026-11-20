@@ -259,6 +259,7 @@ final readonly class Address {
 	 * @return string
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public function __toString(): string {
 		return $this->header();
 	}

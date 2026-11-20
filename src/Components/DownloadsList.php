@@ -34,6 +34,7 @@ class DownloadsList extends Component {
 	 * @return string Downloads list HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$downloads = $args['downloads'] ?? $args;
 

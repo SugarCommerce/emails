@@ -38,14 +38,14 @@ class OrderItems extends Component {
 	 *
 	 * @var string[]
 	 */
-	private const ZERO_DECIMAL = [ 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' ];
+	private const array ZERO_DECIMAL = [ 'bif', 'clp', 'djf', 'gnf', 'jpy', 'kmf', 'krw', 'mga', 'pyg', 'rwf', 'vnd', 'vuv', 'xaf', 'xof', 'xpf' ];
 
 	/**
 	 * Currencies with three digits after the point.
 	 *
 	 * @var string[]
 	 */
-	private const THREE_DECIMAL = [ 'bhd', 'jod', 'kwd', 'omr', 'tnd' ];
+	private const array THREE_DECIMAL = [ 'bhd', 'jod', 'kwd', 'omr', 'tnd' ];
 
 	/**
 	 * Draw it.
@@ -69,6 +69,7 @@ class OrderItems extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$items = $args['items'] ?? [];
 

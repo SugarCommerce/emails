@@ -41,14 +41,14 @@ final class Postmark implements Transport {
 	 *
 	 * @var string
 	 */
-	private const ENDPOINT = 'https://api.postmarkapp.com/email';
+	private const string ENDPOINT = 'https://api.postmarkapp.com/email';
 
 	/**
 	 * The most metadata fields Postmark keeps.
 	 *
 	 * @var int
 	 */
-	private const METADATA_FIELDS = 10;
+	private const int METADATA_FIELDS = 10;
 
 	/**
 	 * Construct.
@@ -87,6 +87,7 @@ final class Postmark implements Transport {
 	 *
 	 * @return Result
 	 */
+	#[\Override]
 	public function send( Message $message ): Result {
 		$payload = [
 			'From'          => '' !== $message->from_email ? Message::address( $message->from_email, $message->from_name ) : self::sender( $this->from ),
@@ -140,6 +141,7 @@ final class Postmark implements Transport {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function name(): string {
 		return 'postmark';
 	}

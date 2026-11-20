@@ -40,6 +40,7 @@ abstract class Component implements ComponentInterface {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return '';
 	}

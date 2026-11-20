@@ -34,6 +34,7 @@ class KeyValueList extends Component {
 	 * @return string Key-value list HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$items = $args['items'] ?? $args;
 

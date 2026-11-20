@@ -37,6 +37,7 @@ class Logo extends Component {
 	 * @return string Logo HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$url   = $args['url'] ?? '';
 		$alt   = $args['alt'] ?? get_bloginfo( 'name' );

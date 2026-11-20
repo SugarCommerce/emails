@@ -34,6 +34,7 @@ class Spacer extends Component {
 	 * @return string Spacer HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$height = isset( $args['height'] ) ? (int) $args['height'] : 20;
 
@@ -60,6 +61,7 @@ class Spacer extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return 'height';
 	}

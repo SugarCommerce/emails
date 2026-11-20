@@ -37,6 +37,7 @@ class CodeBlock extends Component {
 	 * @return string Code block HTML
 	 * @since 1.0.0
 	 */
+	#[\Override]
 	public static function render( array $args = [] ): string {
 		$code       = $args['code'] ?? '';
 		$label      = $args['label'] ?? '';
@@ -79,6 +80,7 @@ class CodeBlock extends Component {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public static function primary_key(): string {
 		return 'code';
 	}

@@ -36,7 +36,7 @@ final class Resend implements Transport {
 	 *
 	 * @var string
 	 */
-	private const ENDPOINT = 'https://api.resend.com/emails';
+	private const string ENDPOINT = 'https://api.resend.com/emails';
 
 	/**
 	 * Construct.
@@ -71,6 +71,7 @@ final class Resend implements Transport {
 	 *
 	 * @return Result
 	 */
+	#[\Override]
 	public function send( Message $message ): Result {
 		$payload = [
 			'from'    => '' !== $message->from_email ? Message::address( $message->from_email, $message->from_name ) : self::sender( $this->from ),
@@ -124,6 +125,7 @@ final class Resend implements Transport {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function name(): string {
 		return 'resend';
 	}

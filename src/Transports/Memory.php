@@ -48,6 +48,7 @@ final class Memory implements Transport {
 	 *
 	 * @return Result
 	 */
+	#[\Override]
 	public function send( Message $message ): Result {
 		if ( ! $this->succeed ) {
 			return Result::failed( $this->error, 500, true );
@@ -63,6 +64,7 @@ final class Memory implements Transport {
 	 *
 	 * @return string
 	 */
+	#[\Override]
 	public function name(): string {
 		return 'memory';
 	}

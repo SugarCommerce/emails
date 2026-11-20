@@ -213,47 +213,40 @@ for tests. A `Result` carries the provider's message id, or why it failed and wh
 `$email->result()`, and the `Runtime::hook( 'delivered' )` action. The `{prefix}_email_transport` filter and the build's own
 `transport` and `redirect` filters change them from outside.
 
-## Moving from arraypress/wp-*
-
-`ArrayPress\RegisterEmails\X` is now `SugarCommerce\Emails\X` unless the table says otherwise; every class, method,
-configuration key, option key and `{prefix}_` hook of the Mailer keeps its name. Text domain `arraypress` is now
-`sugarcommerce`.
-
-| Old | New |
-|---|---|
-| `register_email_tag( $group, $name, $config )` | `Tags::add( $group, $name, $config )` |
-| `register_email( $group, $name, $config )` | `Emails::add( $group, $name, $config )` |
-| `send_registered_email( $group, $name, $overrides )` | `Emails::send( $group, $name, $overrides )` |
-| `preview_registered_email( $group, $name, $overrides )` | `Emails::preview( $group, $name, $overrides )` |
-| `compose_email()` | `Email::make()` |
-| `email_tags_for_editor( $groups )` | `Tags::for_editor( (array) $groups )` |
-| filters `register_emails_template`, `register_emails_template_options` | `Runtime::hook( 'template' )`, `Runtime::hook( 'template_options' )` (`emails_template` unprefixed, `{plugin}_emails_template` in a Strauss build) |
-| default theme folder `register-emails/` | `sugarcommerce-emails/` (`Templates::set_theme_dir()` unchanged) |
-| CSS classes `register-emails-*` | `sugarcommerce-emails-*` |
-| `Sender::headers()`, `wp_mail()` in Send a test | unchanged, and the test now goes through the mailer's transport |
-| `Email` headers kept as lines | kept apart (`Email::message()`); a second `from()` replaces the first |
-| `->to( 'Jane <jane@x.com>' )` sent to `Janejane@x.com` | sent to `jane@x.com`; `from()`/`reply_to()` keep the name too |
-| `Message::address()` writing `Name <address>` | `"Name" <address>` (quoted, escaped); `Message::lines()` writes the form `wp_mail()` reads |
-| every `{word}` in the finished email removed | only the template's own unfilled placeholders; braces in values are sent |
-| `ArrayPress\FormatUtils\Text::humanize()` labels | `SugarCommerce\Text\Text::humanize()` |
-| `order_items` via wp-money's `format_money()` | `format` callable, `sugarcommerce/money`, or strings; translated words |
-| `ArrayPress\RegisterEmails\Utils\Color::hex( $value, $fallback )` | `SugarCommerce\Text\Display\Color::hex( $value, $fallback )` (sugarcommerce/text, the one colour helper); it now also reads a colour without its `#` |
-| `Utils\Color::brightness()`, `::is_light()` (YIQ brightness above 150) | `Text\Display\Color::is_light()` / `::contrast()`, WCAG: a mid-tone colour (red `#ef4444`, green `#22c55e`, blue `#3b82f6`, mid grey) is now light, so it takes near-black words and links |
-| `Utils\Color::readable_on()`, `::link()` | inside `Email` (`#111111` / `#1d2327` on a light colour, as before) |
-| `Abstracts\Component::hex_to_rgba( $hex, $alpha )` | `Text\Display\Color::rgba( $hex, $alpha )` |
-| `Utils\Assets::style()` / `::script()` / `::resolve()` / `::url_of()`, wp-composer-assets | removed: `SugarCommerce\Plugin\Assets::enqueue_style( $handle, __FILE__, $file )` / `::enqueue_script()` / `::resolve()` / `::path_to_url()` (sugarcommerce/plugin, the one home for asset URLs) |
-| `activity_log`, `event_details`, `info_box`, `product_list`, `progress_bar`, `raw_html`, `reward_balance`, `shipping_tracker`, `stats_grid`, `subscription_status`, `testimonial` | removed: nothing used them. `info_box` is `alert` with a `title`; `raw_html` is a tag of type `html` |
-
 A Strauss prefix that itself starts `SugarCommerce\` keeps all its segments -- `SugarCommerce\Playground\Vendor\` gives
 `sugarcommerce_playground_vendor_emails_template` -- so a plugin of the family is never taken for an unprefixed copy.
 
-From the retired SaaS packages: `mailer`'s transports (`Transport`, `SendResult` as `Result`, `Postmark`, `Resend`,
-`Memory`, the staging redirect, the plain-text part), its `Address` (`parse()`, `from()`, quoted `header()`, plus
-`list()` and `email_of()`) and `Message::meta()`/`tag()` (as `Email::meta()`/`tag()`, `Message::$metadata`/`$tag`) and `email-templates`' preheader, `lang`/`dir`, reported unresolved
-tags, pre-formatted amounts and the notice's bold title. Not carried over: the SES, SMTP, Cloudflare and log
-transports and the log viewer (an SMTP plugin already sits behind `wp_mail()`; any other provider is one small
-`Transport`), the MIME builder (PHPMailer's job here), and email-templates' own renderer, layouts, palettes and
-front-matter files (the Mailer's look, the seven designs and gettext do those jobs in WordPress).
+## Security
+
+* Merge tags are escaped as text unless registered as `html`, and filled in
+  one pass, so a customer who types `{order_total}` into their name gets
+  their name back, not somebody's total.
+* Every component escapes what it writes; a table's column alignment is one
+  of `left`, `center` or `right`, never text that ends its attribute.
+* Header injection: a header's name must be a word and its value one line;
+  `From`, `To`, `Cc`, `Bcc`, `Subject` and `Content-Type` cannot be set
+  through the extra headers at all, and addresses are read as written.
+* The admin preview is drawn in a sandboxed frame without scripts or the
+  admin's origin, so HTML in an email cannot run as the signed-in user.
+* Send a test goes only to the signed-in user's own address, and the
+  edited subject, heading and body are sanitised before they are drawn.
+* An API transport's answer is checked with `json_validate()` before it is
+  decoded.
+
+## Layout
+
+* `src/Email.php`, a single email; `src/Traits/Email/` holds its addresses,
+  its rendering and its sending.
+* `src/Emails.php`, `Tags.php`, `Tag.php`, `Templates.php`: registered emails
+  and merge tags, and the HTML designs with theme overrides.
+* `src/Mailer.php`, editable emails for a settings screen; `src/Traits/Mailer/`
+  holds its registered emails, its parts and its words, and `src/Mailer/` the
+  parts themselves (`src/Traits/Sender/` holds the Sender's addresses and
+  settings).
+* `src/Components/`, `src/Parts/`, `src/Render/`: what a tag can draw, the
+  logo and footer, and the tag processor.
+* `src/Delivery.php`, `Transport.php`, `Message.php`, `Result.php`,
+  `Address.php` and `src/Transports/`: how a message is sent.
 
 ## Requirements
 
